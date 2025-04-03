@@ -76,14 +76,3 @@ Key parameters in the script:
 ## License
 This project is open-source and available under the MIT License.
 ```
-
-### Key Points
-- **Overview**: Describes the purpose and data source.
-- **Features**: Highlights data processing, modeling, and visualization.
-- **Requirements**: Lists necessary packages, noting the Keras backend.
-- **Usage**: Provides clear run instructions and expected outputs.
-- **Configuration**: Details adjustable parameters.
-- **Output**: Describes console and plot outputs with an optional placeholder for a sample image.
-- **Notes**: Includes practical tips and customization options.
-
-This README is tailored to your script, offering a user-friendly guide while covering all essential aspects. Let me know if you'd like to tweak anything or add a sample output image reference!
