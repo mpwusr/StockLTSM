@@ -1,0 +1,10 @@
+PyQt5
+yfinance
+pandas
+numpy
+scikit-learn
+matplotlib
+tensorflow
+ta
+pennylane
+python-dotenv
