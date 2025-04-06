@@ -8,14 +8,13 @@ from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential, Model
 from tensorflow.keras.layers import LSTM, Dense, Dropout, Input, MultiHeadAttention, LayerNormalization
 import pennylane as qml
-import pennylane.numpy as qnp  # Corrected import for PennyLane's NumPy
+import pennylane.numpy as qnp
 from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, \
     QPushButton, QTextEdit
 from PyQt5.QtCore import Qt
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from datetime import datetime, timedelta
-
 
 # Data Fetching and Preprocessing
 def fetch_and_prepare_data(ticker, start="2020-01-01", end="2025-04-05"):
@@ -44,7 +43,6 @@ def fetch_and_prepare_data(ticker, start="2020-01-01", end="2025-04-05"):
     X, y = np.array(X), np.array(y)
     return X, y, data_clean, scaler, look_back
 
-
 # Predict Future Prices
 def predict_future(model, last_sequence, scaler, look_back, future_days):
     predictions = []
@@ -58,7 +56,6 @@ def predict_future(model, last_sequence, scaler, look_back, future_days):
     padded = np.concatenate((predictions, np.zeros((len(predictions), 6))), axis=1)
     return scaler.inverse_transform(padded)[:, 0]
 
-
 # LSTM Model
 def build_lstm_model(input_shape):
     model = Sequential()
@@ -68,7 +65,6 @@ def build_lstm_model(input_shape):
     model.add(Dense(1))
     model.compile(optimizer='adam', loss='mse')
     return model
-
 
 # Transformer Model
 def build_transformer_model(input_shape):
@@ -84,11 +80,9 @@ def build_transformer_model(input_shape):
     model.compile(optimizer='adam', loss='mse')
     return model
 
-
 # Quantum Model with Optimization
 n_qubits = 4
 dev = qml.device("default.qubit", wires=n_qubits)
-
 
 @qml.qnode(dev)
 def quantum_circuit(inputs, weights):
@@ -100,23 +94,20 @@ def quantum_circuit(inputs, weights):
         qml.RY(weights[i], wires=i)
     return qml.expval(qml.PauliZ(0))
 
-
 def optimize_quantum_weights(X, y, scaler, look_back, iterations=10):
     weights = qnp.random.random(n_qubits, requires_grad=True)
     opt = qml.AdamOptimizer(stepsize=0.1)
-    y = qnp.array(y, requires_grad=False)  # Convert y to qnp.array for compatibility
+    y = qnp.array(y, requires_grad=False)
     for _ in range(iterations):
         def cost(weights):
             preds = []
             for x in X[:, -1, :n_qubits]:
                 pred = quantum_circuit(x, weights)
                 preds.append(pred)
-            preds = qnp.array(preds)  # Convert list of ArrayBox to qnp.array
+            preds = qnp.array(preds)
             return qnp.mean((preds - y) ** 2)
-
         weights = opt.step(cost, weights)
     return weights
-
 
 def quantum_predict_future(last_sequence, weights, scaler, look_back, future_days):
     predictions = []
@@ -130,9 +121,8 @@ def quantum_predict_future(last_sequence, weights, scaler, look_back, future_day
     padded = np.concatenate((predictions.reshape(-1, 1), np.zeros((len(predictions), 6))), axis=1)
     return scaler.inverse_transform(padded)[:, 0]
 
-
-# Trading Strategy with Go/No Go Evaluation
-def trading_strategy(predictions, last_date, future_days):
+# Trading Strategy with Go/No Go Evaluation and Dates
+def trading_strategy(predictions, last_date, future_dates):
     positions = []
     cash = 10000
     initial_cash = cash
@@ -143,22 +133,23 @@ def trading_strategy(predictions, last_date, future_days):
     for i in range(len(predictions)):
         pred_price = predictions[i]
         current_price = pred_price
-        if i > 0 and pred_price > predictions[i - 1] and cash > current_price:
+        # Format the date as MMDDYYYY
+        trade_date = future_dates[i].strftime("%m%d%Y")
+        if i > 0 and pred_price > predictions[i-1] and cash > current_price:
             shares_to_buy = int(cash / current_price)
             shares += shares_to_buy
             cash -= shares_to_buy * current_price
             entry_price = current_price
-            positions.append(f"Buy {shares_to_buy} shares at ${current_price:.2f}")
+            positions.append(f"{trade_date} Buy {shares_to_buy} shares at ${current_price:.2f}")
         elif shares > 0:
             if current_price <= entry_price * (1 - stop_loss) or current_price >= entry_price * (1 + take_profit):
                 cash += shares * current_price
-                positions.append(f"Sell {shares} shares at ${current_price:.2f}")
+                positions.append(f"{trade_date} Sell {shares} shares at ${current_price:.2f}")
                 shares = 0
 
     final_cash = cash
     go_no_go = "Go" if final_cash > initial_cash else "No Go"
     return positions, f"${final_cash:.2f}", go_no_go
-
 
 # GUI Class
 class StockTradingGUI(QMainWindow):
@@ -222,7 +213,7 @@ class StockTradingGUI(QMainWindow):
                 self.ticker_data[ticker] = {"X": X, "y": y, "data": data, "scaler": scaler, "look_back": look_back}
 
     def generate_future_dates(self, last_date, future_days):
-        return [last_date + timedelta(days=i) for i in range(1, future_days + 1)]
+        return [last_date + timedelta(days=i) for i in range(1, future_days + 1)]  # Fixed to match prediction length
 
     def plot_results(self, predictions_dict, title, last_date):
         self.figure.clear()
@@ -252,19 +243,23 @@ class StockTradingGUI(QMainWindow):
         results = {ticker: {} for ticker in self.tickers}
         selected_ticker = self.ticker_combo.currentText()
         predictions_dict = {}
+        all_trades = {horizon: [] for horizon in self.horizons}
 
         for ticker in self.tickers:
             X, y = self.ticker_data[ticker]["X"], self.ticker_data[ticker]["y"]
+            last_date = self.ticker_data[ticker]["data"].index[-1]
             model = build_lstm_model((X.shape[1], X.shape[2]))
             model.fit(X, y, epochs=10, batch_size=32, verbose=0)
             last_sequence = X[-1]
             for horizon, days in self.horizons.items():
+                future_dates = self.generate_future_dates(last_date, days)
                 preds = predict_future(model, last_sequence, self.ticker_data[ticker]["scaler"],
                                        self.ticker_data[ticker]["look_back"], days)
-                trades, cash, go_no_go = trading_strategy(preds, self.ticker_data[ticker]["data"].index[-1], days)
+                trades, cash, go_no_go = trading_strategy(preds, last_date, future_dates)
                 results[ticker][horizon] = go_no_go
                 if ticker == selected_ticker:
-                    output = [f"Initial Investment: $10,000", f"Trades:\n{'\n'.join(trades)}",
+                    all_trades[horizon] = trades
+                    output = [f"Initial Investment: $10,000", f"{horizon} Trades:\n{'\n'.join(trades)}",
                               f"Money in Reserve: {cash}", f"Decision: {go_no_go}"]
                     self.output_texts[horizon].setText("\n".join(output))
                 if horizon == "Long (1 year)":
@@ -280,19 +275,23 @@ class StockTradingGUI(QMainWindow):
         results = {ticker: {} for ticker in self.tickers}
         selected_ticker = self.ticker_combo.currentText()
         predictions_dict = {}
+        all_trades = {horizon: [] for horizon in self.horizons}
 
         for ticker in self.tickers:
             X, y = self.ticker_data[ticker]["X"], self.ticker_data[ticker]["y"]
+            last_date = self.ticker_data[ticker]["data"].index[-1]
             model = build_transformer_model((X.shape[1], X.shape[2]))
             model.fit(X, y, epochs=10, batch_size=32, verbose=0)
             last_sequence = X[-1]
             for horizon, days in self.horizons.items():
+                future_dates = self.generate_future_dates(last_date, days)
                 preds = predict_future(model, last_sequence, self.ticker_data[ticker]["scaler"],
                                        self.ticker_data[ticker]["look_back"], days)
-                trades, cash, go_no_go = trading_strategy(preds, self.ticker_data[ticker]["data"].index[-1], days)
+                trades, cash, go_no_go = trading_strategy(preds, last_date, future_dates)
                 results[ticker][horizon] = go_no_go
                 if ticker == selected_ticker:
-                    output = [f"Initial Investment: $10,000", f"Trades:\n{'\n'.join(trades)}",
+                    all_trades[horizon] = trades
+                    output = [f"Initial Investment: $10,000", f"{horizon} Trades:\n{'\n'.join(trades)}",
                               f"Money in Reserve: {cash}", f"Decision: {go_no_go}"]
                     self.output_texts[horizon].setText("\n".join(output))
                 if horizon == "Long (1 year)":
@@ -308,19 +307,23 @@ class StockTradingGUI(QMainWindow):
         results = {ticker: {} for ticker in self.tickers}
         selected_ticker = self.ticker_combo.currentText()
         predictions_dict = {}
+        all_trades = {horizon: [] for horizon in self.horizons}
 
         for ticker in self.tickers:
             X, y = self.ticker_data[ticker]["X"], self.ticker_data[ticker]["y"]
+            last_date = self.ticker_data[ticker]["data"].index[-1]
             weights = optimize_quantum_weights(X, y, self.ticker_data[ticker]["scaler"],
                                                self.ticker_data[ticker]["look_back"], iterations=10)
             last_sequence = X[-1]
             for horizon, days in self.horizons.items():
+                future_dates = self.generate_future_dates(last_date, days)
                 preds = quantum_predict_future(last_sequence, weights, self.ticker_data[ticker]["scaler"],
                                                self.ticker_data[ticker]["look_back"], days)
-                trades, cash, go_no_go = trading_strategy(preds, self.ticker_data[ticker]["data"].index[-1], days)
+                trades, cash, go_no_go = trading_strategy(preds, last_date, future_dates)
                 results[ticker][horizon] = go_no_go
                 if ticker == selected_ticker:
-                    output = [f"Initial Investment: $10,000", f"Trades:\n{'\n'.join(trades)}",
+                    all_trades[horizon] = trades
+                    output = [f"Initial Investment: $10,000", f"{horizon} Trades:\n{'\n'.join(trades)}",
                               f"Money in Reserve: {cash}", f"Decision: {go_no_go}"]
                     self.output_texts[horizon].setText("\n".join(output))
                 if horizon == "Long (1 year)":
@@ -330,7 +333,6 @@ class StockTradingGUI(QMainWindow):
             self.plot_results(predictions_dict, f"Quantum Future Predictions for {selected_ticker}",
                               self.ticker_data[selected_ticker]["data"].index[-1])
         print("Quantum Go/No Go:", results)
-
 
 # Main Execution
 if __name__ == "__main__":
