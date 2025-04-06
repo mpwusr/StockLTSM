@@ -54,7 +54,10 @@ def predict_future(model, last_sequence, scaler, look_back, future_days):
         current_sequence[-1] = pred
     predictions = np.array(predictions).reshape(-1, 1)
     padded = np.concatenate((predictions, np.zeros((len(predictions), 6))), axis=1)
-    return scaler.inverse_transform(padded)[:, 0]
+    predictions = scaler.inverse_transform(padded)[:, 0]
+    # Ensure predictions are non-negative
+    predictions = np.maximum(predictions, 0)
+    return predictions
 
 # LSTM Model
 def build_lstm_model(input_shape):
@@ -119,7 +122,10 @@ def quantum_predict_future(last_sequence, weights, scaler, look_back, future_day
         current_sequence[-1, 0] = pred
     predictions = (np.array(predictions) + 1) / 2
     padded = np.concatenate((predictions.reshape(-1, 1), np.zeros((len(predictions), 6))), axis=1)
-    return scaler.inverse_transform(padded)[:, 0]
+    predictions = scaler.inverse_transform(padded)[:, 0]
+    # Ensure predictions are non-negative
+    predictions = np.maximum(predictions, 0)
+    return predictions
 
 # Trading Strategy with Go/No Go Evaluation and Dates
 def trading_strategy(predictions, last_date, future_dates):
@@ -135,8 +141,8 @@ def trading_strategy(predictions, last_date, future_dates):
         current_price = pred_price
         # Format the date as MMDDYYYY
         trade_date = future_dates[i].strftime("%m%d%Y")
-        if i > 0 and pred_price > predictions[i-1] and cash > current_price:
-            shares_to_buy = int(cash / current_price)
+        if i > 0 and pred_price > predictions[i-1] and cash > current_price and current_price > 0:  # Ensure positive price
+            shares_to_buy = max(1, int(cash / current_price))  # Ensure at least 1 share
             shares += shares_to_buy
             cash -= shares_to_buy * current_price
             entry_price = current_price
@@ -213,7 +219,7 @@ class StockTradingGUI(QMainWindow):
                 self.ticker_data[ticker] = {"X": X, "y": y, "data": data, "scaler": scaler, "look_back": look_back}
 
     def generate_future_dates(self, last_date, future_days):
-        return [last_date + timedelta(days=i) for i in range(1, future_days + 1)]  # Fixed to match prediction length
+        return [last_date + timedelta(days=i) for i in range(1, future_days + 1)]
 
     def plot_results(self, predictions_dict, title, last_date):
         self.figure.clear()
