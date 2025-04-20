@@ -11,7 +11,7 @@ from sklearn.metrics import (
 from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QComboBox, QPushButton, QTextEdit, QProgressBar, QTabWidget
+    QLabel, QComboBox, QPushButton, QTextEdit, QProgressBar, QTabWidget, QCheckBox
 )
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
@@ -24,6 +24,19 @@ from tensorflow.keras.models import load_model
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, Callback
 import pennylane.numpy as qnp
 
+MODEL_COLORS = {
+    "LSTM": "blue",
+    "Transformer": "orange",
+    "GRUCNN": "purple",
+    "QML": "green"
+}
+
+MODEL_LABELS = {
+    "LSTM": "LSTM",
+    "Transformer": "Transformer",
+    "GRUCNN": "GRUCNN",
+    "QML": "Quantum Machine Learning"
+}
 
 class MetricsTrackingCallback(Callback):
     def __init__(self, X_train, y_train, X_val, y_val):
@@ -200,8 +213,10 @@ class StockTradingGUI(QMainWindow):
         button_layout = QHBoxLayout()
         self.lstm_btn = QPushButton("Run LSTM")
         self.trans_btn = QPushButton("Run Transformer")
-        self.gru_cnn_btn = QPushButton("Run GRU+CNN")
-        self.q_btn = QPushButton("Run Quantum")
+        self.gru_cnn_btn = QPushButton("Run GRUCNN")
+        self.q_btn = QPushButton("Run QML")
+        self.debug_checkbox = QCheckBox("Debug Trading Logs")
+        layout.addWidget(self.debug_checkbox)
         for b in [self.lstm_btn, self.trans_btn, self.gru_cnn_btn, self.q_btn]:
             button_layout.addWidget(b)
         layout.addLayout(button_layout)
@@ -241,11 +256,12 @@ class StockTradingGUI(QMainWindow):
         self.lstm_btn.clicked.connect(lambda: self.run("LSTM"))
         self.trans_btn.clicked.connect(lambda: self.run("Transformer"))
         self.gru_cnn_btn.clicked.connect(lambda: self.run("GRUCNN"))
-        self.q_btn.clicked.connect(lambda: self.run("Quantum"))
+        self.q_btn.clicked.connect(lambda: self.run("QML"))
 
     def run(self, mode):
         self.progress.show()
         self.toggle_buttons(False, mode)
+        self.debug_enabled = self.debug_checkbox.isChecked()
 
         self.current_model = mode
         ticker = self.ticker_combo.currentText()
@@ -285,10 +301,10 @@ class StockTradingGUI(QMainWindow):
             (self.lstm_btn, "LSTM"),
             (self.trans_btn, "Transformer"),
             (self.gru_cnn_btn, "GRUCNN"),
-            (self.q_btn, "Quantum")
+            (self.q_btn, "QML")
         ]:
             btn.setEnabled(enable)
-            btn.setText("Running..." if name == running_label and not enable else f"Run {name.replace('GRUCNN', 'GRU+CNN')}")
+            btn.setText("Running..." if name == running_label and not enable else f"Run {name}")
 
     def on_complete(self, results, ticker, last_date, history):
         self.progress.hide()
@@ -296,9 +312,10 @@ class StockTradingGUI(QMainWindow):
         self.plot_forecast(results, last_date)
         self.plot_training_curves(history)
 
+
         for label, preds in results.items():
             future_dates = [last_date + timedelta(days=i) for i in range(1, len(preds) + 1)]
-            trades, cash, go, stats = trading_strategy(preds, last_date, future_dates)
+            trades, cash, go, stats = trading_strategy(preds, last_date, future_dates, verbose=self.debug_enabled)
             summary = f"Initial $10K\n{label} Trades:\n" + "\n".join(trades) + f"\nCash: {cash}\nDecision: {go}\n"
             summary += "\n" + "\n".join(f"{k}: {v}" for k, v in stats.items())
             self.output_texts[label].setText(summary)

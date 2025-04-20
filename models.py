@@ -4,10 +4,12 @@ from tensorflow.keras.layers import (
     LayerNormalization, Add, Conv1D, MaxPooling1D
 )
 from tensorflow.keras.metrics import MeanAbsoluteError, MeanAbsolutePercentageError
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="keras")
 
 
 def build_lstm_model(input_shape):
-    inputs = Input(shape=input_shape, name="input_layer")
+    inputs = Input(shape=input_shape)
     x = LSTM(50, return_sequences=True)(inputs)
     x = Dropout(0.2)(x)
     x = LSTM(50)(x)
@@ -27,7 +29,7 @@ def build_lstm_model(input_shape):
 
 
 def build_transformer_model(input_shape):
-    inputs = Input(shape=input_shape, name="input_layer")
+    inputs = Input(shape=input_shape)
     attention_output = MultiHeadAttention(num_heads=4, key_dim=64)(inputs, inputs)
     attention_output = Add()([inputs, attention_output])
     x = LayerNormalization(epsilon=1e-6)(attention_output)
@@ -57,7 +59,7 @@ def build_transformer_model(input_shape):
 
 
 def build_gru_cnn_model(input_shape):
-    inputs = Input(shape=input_shape, name="input_layer")
+    inputs = Input(shape=input_shape)
     x = Conv1D(filters=32, kernel_size=3, activation='relu')(inputs)
     x = MaxPooling1D(pool_size=2)(x)
     x = GRU(64, return_sequences=True)(x)
