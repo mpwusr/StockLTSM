@@ -15,6 +15,7 @@ from PyQt5.QtWidgets import (
 )
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
+from data_provider import fetch_stock_data
 from models import build_lstm_model, build_transformer_model, build_gru_cnn_model
 from quantum import optimize_quantum_weights, quantum_predict_future
 from utils import load_tickers_from_env
@@ -74,20 +75,20 @@ class MetricsTrackingCallback(Callback):
             logs["val_mae"] = val_mae
 
 
-def fetch_and_prepare_data(ticker, start="2020-01-01", end="2025-04-05"):
-    data = yf.download(ticker, start=start, end=end)
+def fetch_and_prepare_data(ticker, source="polygon", start="2020-01-01", end="2025-04-05"):
     from ta.trend import SMAIndicator, MACD
     from ta.momentum import RSIIndicator
     from sklearn.preprocessing import MinMaxScaler
 
-    close_prices = data["Close"].squeeze()
-    data = data[["Close", "Volume"]]
-    data["SMA_20"] = SMAIndicator(close_prices, window=20).sma_indicator()
-    data["SMA_50"] = SMAIndicator(close_prices, window=50).sma_indicator()
-    data["RSI"] = RSIIndicator(close_prices, window=14).rsi()
+    data = fetch_stock_data(ticker, source=source, start=start, end=end)
+
+    close_prices = data['Close'].squeeze()
+    data['SMA_20'] = SMAIndicator(close_prices, window=20).sma_indicator()
+    data['SMA_50'] = SMAIndicator(close_prices, window=50).sma_indicator()
+    data['RSI'] = RSIIndicator(close_prices, window=14).rsi()
     macd = MACD(close_prices)
-    data["MACD"] = macd.macd()
-    data["MACD_Signal"] = macd.macd_signal()
+    data['MACD'] = macd.macd()
+    data['MACD_Signal'] = macd.macd_signal()
 
     data_clean = data.dropna()
     scaler = MinMaxScaler()
@@ -95,9 +96,10 @@ def fetch_and_prepare_data(ticker, start="2020-01-01", end="2025-04-05"):
 
     X, y = [], []
     look_back = 60
+    close_index = data_clean.columns.get_loc('Close')
     for i in range(look_back, len(scaled_data)):
         X.append(scaled_data[i - look_back:i])
-        y.append(scaled_data[i, 0])
+        y.append(scaled_data[i, close_index])
 
     return np.array(X), np.array(y), data_clean, scaler, look_back
 
@@ -109,10 +111,17 @@ def predict_future(model, last_sequence, scaler, look_back, future_days):
         pred = model.predict(current_sequence[np.newaxis, :, :], verbose=0)[0, 0]
         predictions.append(pred)
         current_sequence = np.roll(current_sequence, -1, axis=0)
-        current_sequence[-1] = pred
+        current_sequence[-1] = pred  # Only update Close (assumed first feature)
+
     predictions = np.array(predictions).reshape(-1, 1)
-    padded = np.concatenate((predictions, np.zeros((len(predictions), 6))), axis=1)
+
+    # ✅ Auto-determine how many features the scaler expects
+    num_features = scaler.scale_.shape[0]
+    padding = num_features - 1  # already have Close prediction
+    padded = np.concatenate((predictions, np.zeros((len(predictions), padding))), axis=1)
+
     return np.maximum(scaler.inverse_transform(padded)[:, 0], 0)
+
 
 
 class ModelTrainerThread(QThread):
@@ -188,10 +197,29 @@ class ModelTrainerThread(QThread):
         for label, days in {"Short": 30, "Medium": 90, "Long": 365}.items():
             results[label] = pred_func(last_seq, days, label)
         self.finished.emit(results, self.ticker, last_date, self.history)
+        import pandas as pd
+        from datetime import datetime
+
+        log_dir = os.path.join("training_logs", self.ticker)
+        os.makedirs(log_dir, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        model_tag = (
+            "lstm" if self.model_builder == build_lstm_model else
+            "transformer" if self.model_builder == build_transformer_model else
+            "gru_cnn"
+        )
+
+        csv_path = os.path.join(log_dir, f"{model_tag}_training_log_{timestamp}.csv")
+        pd.DataFrame(self.history).to_csv(csv_path, index=False)
+
+        print(f"✅ Training log saved to {csv_path}")
+
 
 class StockTradingGUI(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.forecast_folder_path = None
         self.setWindowTitle("Stock Trading GUI")
         self.setGeometry(100, 100, 1200, 800)
 
@@ -210,6 +238,15 @@ class StockTradingGUI(QMainWindow):
         layout.addWidget(QLabel("Select Ticker:"))
         layout.addWidget(self.ticker_combo)
 
+        self.save_button = QPushButton("Save Forecast")
+        self.save_button.setEnabled(False)
+        self.save_button.clicked.connect(self.save_forecast)
+        layout.addWidget(self.save_button)
+
+        self.last_forecast = None
+        self.last_ticker = None
+        self.current_model = None
+
         button_layout = QHBoxLayout()
         self.lstm_btn = QPushButton("Run LSTM")
         self.trans_btn = QPushButton("Run Transformer")
@@ -217,6 +254,21 @@ class StockTradingGUI(QMainWindow):
         self.q_btn = QPushButton("Run QML")
         self.debug_checkbox = QCheckBox("Debug Trading Logs")
         layout.addWidget(self.debug_checkbox)
+
+        self.view_folder_button = QPushButton("View Folder")
+        self.view_folder_button.setEnabled(False)
+        self.view_folder_button.clicked.connect(self.open_forecast_folder)
+
+        button_row = QHBoxLayout()
+        button_row.addWidget(self.save_button)
+        button_row.addWidget(self.view_folder_button)
+        layout.addLayout(button_row)
+
+        self.source_combo = QComboBox()
+        self.source_combo.addItems(["polygon", "yahoo"])
+        layout.addWidget(QLabel("Select Data Source:"))
+        layout.addWidget(self.source_combo)
+
         for b in [self.lstm_btn, self.trans_btn, self.gru_cnn_btn, self.q_btn]:
             button_layout.addWidget(b)
         layout.addLayout(button_layout)
@@ -258,15 +310,68 @@ class StockTradingGUI(QMainWindow):
         self.gru_cnn_btn.clicked.connect(lambda: self.run("GRUCNN"))
         self.q_btn.clicked.connect(lambda: self.run("QML"))
 
+    def save_forecast(self):
+        if not self.last_forecast or not self.last_ticker or not self.current_model:
+            return
+
+        from datetime import datetime
+        import pandas as pd
+        from PyQt5.QtWidgets import QMessageBox
+
+        output_dir = os.path.join("forecasts", self.last_ticker)
+        os.makedirs(output_dir, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        saved_files = []
+
+        for label, preds in self.last_forecast.items():
+            dates = [
+                self.ticker_data[self.last_ticker]['data'].index[-1] + timedelta(days=i)
+                for i in range(1, len(preds) + 1)
+            ]
+            df = pd.DataFrame({"Date": dates, "Forecast": preds})
+            fname = f"{self.current_model}_{label}_{timestamp}.csv"
+            full_path = os.path.join(output_dir, fname)
+            df.to_csv(full_path, index=False)
+            saved_files.append(fname)
+
+        self.save_button.setEnabled(False)
+
+        # ✅ Show popup
+        QMessageBox.information(
+            self,
+            "Forecast Saved",
+            f"Saved forecast CSVs:\n\n" + "\n".join(saved_files),
+            QMessageBox.Ok
+        )
+        self.view_folder_button.setEnabled(True)
+        self.forecast_folder_path = output_dir  # Store path for the viewer
+
+    def open_forecast_folder(self):
+        if not hasattr(self, "forecast_folder_path") or not os.path.isdir(self.forecast_folder_path):
+            return
+
+        path = os.path.abspath(self.forecast_folder_path)
+
+        if sys.platform.startswith("darwin"):  # macOS
+            os.system(f"open '{path}'")
+        elif os.name == "nt":  # Windows
+            os.startfile(path)
+        elif os.name == "posix":  # Linux
+            os.system(f"xdg-open '{path}'")
+
     def run(self, mode):
         self.progress.show()
         self.toggle_buttons(False, mode)
         self.debug_enabled = self.debug_checkbox.isChecked()
 
+
+
         self.current_model = mode
         ticker = self.ticker_combo.currentText()
+        source = self.source_combo.currentText()
         if ticker not in self.ticker_data:
-            X, y, data, scaler, look_back = fetch_and_prepare_data(ticker)
+            X, y, data, scaler, look_back = fetch_and_prepare_data(ticker, source=source)
             self.ticker_data[ticker] = {"X": X, "y": y, "data": data, "scaler": scaler, "look_back": look_back}
 
         X, y, data, scaler, look_back = self.ticker_data[ticker].values()
@@ -311,7 +416,14 @@ class StockTradingGUI(QMainWindow):
         self.toggle_buttons(True)
         self.plot_forecast(results, last_date)
         self.plot_training_curves(history)
+        self.progress.hide()
+        self.toggle_buttons(True)
+        self.plot_forecast(results, last_date)
+        self.plot_training_curves(history)
 
+        self.last_forecast = results
+        self.last_ticker = ticker
+        self.save_button.setEnabled(True)
 
         for label, preds in results.items():
             future_dates = [last_date + timedelta(days=i) for i in range(1, len(preds) + 1)]
