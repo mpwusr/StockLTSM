@@ -11,7 +11,7 @@ A PyQt5-based AI stock forecasting app that combines classical and quantum machi
 - LSTM (Long Short-Term Memory)
 - Transformer
 - GRU + CNN Hybrid
-- ⚛QML (Quantum Machine Learning via PennyLane)
+- QML (Quantum Machine Learning via PennyLane)
 
 It features a GUI for interactive use, real-time model training diagnostics, metrics visualizations, trading signal simulation, and optional debug logging.
 
@@ -101,8 +101,8 @@ python main.py
 ## Sample Output
 
 ```text
-✅ Training log saved to training_logs/AAPL/lstm_training_log_20250420_1012.csv
-✅ Saved forecast CSVs:
+Training log saved to training_logs/AAPL/lstm_training_log_20250420_1012.csv
+ Saved forecast CSVs:
   - LSTM_Short_20250420_1015.csv
   - LSTM_Medium_20250420_1015.csv
   - LSTM_Long_20250420_1015.csv
@@ -134,7 +134,7 @@ python main.py
 
 ---
 
-## 📄 License
+## License
 
 MIT License © [mpwusr](https://github.com/mpwusr)
 
