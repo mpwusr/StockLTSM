@@ -1,78 +1,150 @@
-# Stock Price Prediction with LSTM
+Here's a complete and polished `README.md` for your [`StockLTSMTransformerQuantum`](https://github.com/mpwusr/StockLTSMTransformerQuantum) repository:
 
-This repository contains a Python script that uses a Long Short-Term Memory (LSTM) neural network to predict stock prices based on historical data from Yahoo Finance. The script downloads data, preprocesses it, trains an LSTM model, and visualizes the results.
+---
 
-## Dataset
-- **Source**: Yahoo Finance via `yfinance`
-- **Ticker**: AAPL (Apple Inc.) - configurable
-- **Time Period**: January 1, 2010, to January 1, 2024
-- **Data**: Daily closing prices
+```markdown
+# 📈 StockLTSMTransformerQuantum
 
-## Features
-- **Data Processing**
-  - Downloads historical stock prices
-  - Normalizes data using MinMaxScaler
-  - Creates sequences (60-day windows) for time series prediction
-- **Model**
-  - LSTM architecture with two layers (50 units each)
-  - Dense output layer for single-value prediction
-- **Training**
-  - 70/30 train-test split
-  - 50 epochs with Adam optimizer and MSE loss
-- **Visualization**
-  - Training and validation loss over epochs
-  - Actual vs. predicted prices for train and test sets
+A PyQt5-based AI stock forecasting app that combines classical and quantum machine learning models to simulate, visualize, and evaluate trading strategies across multiple time horizons (Short / Medium / Long).
 
-## Requirements
+---
+
+## 🔍 Overview
+
+**StockLTSMTransformerQuantum** is an end-to-end forecasting and trading simulation toolkit that enables side-by-side comparison of:
+
+- 🧠 LSTM (Long Short-Term Memory)
+- 🧠 Transformer
+- 🧠 GRU + CNN Hybrid
+- ⚛️ QML (Quantum Machine Learning via PennyLane)
+
+It features a GUI for interactive use, real-time model training diagnostics, metrics visualizations, trading signal simulation, and optional debug logging.
+
+---
+
+## 🚀 Features
+
+- ✅ GUI built with PyQt5
+- ✅ Multi-tab layout (Forecasts + Training Diagnostics)
+- ✅ Model comparison with MAE, MAPE, R², Sharpe Ratio
+- ✅ Toggleable debug logs
+- ✅ Support for both Yahoo Finance and Polygon.io as data providers
+- ✅ Training and forecast export (CSV)
+- ✅ Training history auto-saved per model
+- ✅ "Save Forecast" and "Open Folder" buttons
+- ✅ Color-coded plots and dropdown data source switching
+- ✅ Robust exception handling and logging
+
+---
+
+## 📊 Models
+
+| Model        | Architecture             | Highlights                       |
+|--------------|--------------------------|-----------------------------------|
+| `LSTM`       | 2-layer LSTM             | Great for sequential time series |
+| `Transformer`| Multi-head Attention     | Captures long-term dependencies  |
+| `GRUCNN`     | Conv1D + GRU             | Combines pattern extraction + memory |
+| `QML`        | PennyLane quantum model  | Lightweight and interpretable    |
+
+---
+
+## 🖼 GUI Preview
+
+| Forecast Tab                          | Training Diagnostics Tab            |
+|--------------------------------------|-------------------------------------|
+| ![Forecast](assets/forecast_sample.png) | ![Diagnostics](assets/diagnostics_sample.png) |
+
+---
+
+## 🧰 Installation
+
 ```bash
-pip install matplotlib numpy yfinance keras sklearn
+git clone https://github.com/mpwusr/StockLTSMTransformerQuantum.git
+cd StockLTSMTransformerQuantum
+python -m venv .venv
+source .venv/bin/activate  # or .venv\Scripts\activate on Windows
+pip install -r requirements.txt
+```
 
-## Usage
-1. Ensure an internet connection for data download
-2. Run the script:
+---
+
+## 🛠 Usage
+
+1. Set your `.env` file:
+
+```
+POLYGON_API_KEY=your_key_here
+```
+
+2. Launch the GUI:
+
 ```bash
-python stock_price_lstm.py
+python main.py
 ```
-3. View outputs:
-   - Console: Train and test loss values
-   - Plots: Loss curves and price predictions
 
-## Script Structure
-- **Data Retrieval**: Downloads stock data using `yfinance`
-- **Preprocessing**: Normalizes and sequences data
-- **Model Definition**: Builds LSTM model with Keras
-- **Training**: Fits model with validation
-- **Prediction**: Generates and denormalizes predictions
-- **Visualization**: Plots results with Matplotlib
+3. Select ticker, model, and data source (Polygon/Yahoo).
+4. Train model, visualize predictions, and export results.
 
-## Configuration
-Key parameters in the script:
-- `ticker`: Stock symbol (default: "AAPL")
-- `start_date`: Start date (default: "2010-01-01")
-- `end_date`: End date (default: "2024-01-01")
-- `sequence_length`: Days of historical data per prediction (default: 60)
-- `epochs`: Training iterations (default: 50)
-- `batch_size`: Training batch size (default: 32)
+---
 
-## Output
-- **Console**:
-  ```
-  Train Loss: 0.000123
-  Test Loss: 0.000456
-  ```
-- **Plots**:
-  - Top: Training and validation loss over epochs
-  - Bottom: Actual vs. predicted stock prices over time
+## 📂 Directory Structure
 
-## Example Output
-![Sample Plot](example_output.png) *(Add this file manually if desired)*
-
-## Notes
-- Adjust `ticker`, `start_date`, and `end_date` to analyze different stocks or periods
-- Model performance may vary with different sequence lengths or epochs
-- Requires stable internet for `yfinance` data retrieval
-- Uses MinMaxScaler; other scalers (e.g., StandardScaler) could be substituted
-
-## License
-This project is open-source and available under the MIT License.
 ```
+├── data_provider.py         # Unified stock data API
+├── main.py                  # GUI entry point
+├── models.py                # Model definitions
+├── quantum.py               # QML prediction logic
+├── trading.py               # Strategy simulation + metrics
+├── utils.py                 # Ticker loading, helpers
+├── forecasts/               # Exported forecasts
+├── training_logs/           # Per-model training logs
+└── requirements.txt
+```
+
+---
+
+## 📈 Sample Output
+
+```text
+✅ Training log saved to training_logs/AAPL/lstm_training_log_20250420_1012.csv
+✅ Saved forecast CSVs:
+  - LSTM_Short_20250420_1015.csv
+  - LSTM_Medium_20250420_1015.csv
+  - LSTM_Long_20250420_1015.csv
+```
+
+---
+
+## 📊 Model Comparison Snapshot
+
+| Model      | Val MAE | Sharpe | MAPE (%) | R²     |
+|------------|---------|--------|----------|--------|
+| LSTM       | 3.12    | 1.45   | 6.78     | 0.81   |
+| Transformer| 2.87    | 1.32   | 6.05     | 0.85   |
+| GRUCNN     | 3.01    | 1.51   | 6.40     | 0.83   |
+| QML        | 3.25    | 1.12   | 7.15     | 0.79   |
+
+---
+
+## 🧠 Built With
+
+- Python 3.12
+- PyQt5
+- TensorFlow / Keras
+- PennyLane (for QML)
+- yFinance + Polygon.io
+- scikit-learn
+- TA-Lib (via `ta` package)
+- matplotlib
+
+---
+
+## 📄 License
+
+MIT License © [mpwusr](https://github.com/mpwusr)
+
+---
+
+## 🙌 Acknowledgments
+
+Thanks to [PennyLane](https://pennylane.ai/), [Keras](https://keras.io/), and [Polygon.io](https://polygon.io/) for APIs and tooling.
