@@ -1,81 +1,94 @@
 import sys
-from datetime import timedelta
-
-import matplotlib.pyplot as plt
+import os
 import numpy as np
+import matplotlib.pyplot as plt
+from datetime import timedelta
 import yfinance as yf
+from sklearn.metrics import (
+    mean_absolute_error, mean_absolute_percentage_error, r2_score
+)
+
 from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QComboBox, QPushButton, QTextEdit, QProgressBar
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QLabel, QComboBox, QPushButton, QTextEdit, QProgressBar, QTabWidget
 )
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
-from models import build_lstm_model, build_transformer_model
+from models import build_lstm_model, build_transformer_model, build_gru_cnn_model
 from quantum import optimize_quantum_weights, quantum_predict_future
 from utils import load_tickers_from_env
+from trading import trading_strategy
 
-# Add imports for fine-tuning and model persistence
-import os
-import pennylane.numpy as qnp
 from tensorflow.keras.models import load_model
-from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, Callback
+import pennylane.numpy as qnp
 
-# Fetch and preprocess stock data
+
+class MetricsTrackingCallback(Callback):
+    def __init__(self, X_train, y_train, X_val, y_val):
+        super().__init__()
+        self.X_train = X_train
+        self.y_train = y_train
+        self.X_val = X_val
+        self.y_val = y_val
+        self.history = {
+            "train_mae": [],
+            "val_mae": [],
+            "val_mape": [],
+            "val_r2": [],
+            "val_sharpe": []
+        }
+
+    def on_epoch_end(self, epoch, logs=None):
+        y_train_pred = self.model.predict(self.X_train, verbose=0).squeeze()
+        y_val_pred = self.model.predict(self.X_val, verbose=0).squeeze()
+
+        train_mae = mean_absolute_error(self.y_train, y_train_pred)
+        val_mae = mean_absolute_error(self.y_val, y_val_pred)
+        val_mape = mean_absolute_percentage_error(self.y_val, y_val_pred)
+        val_r2 = r2_score(self.y_val, y_val_pred)
+        daily_returns = np.diff(y_val_pred) / y_val_pred[:-1]
+        sharpe = (np.mean(daily_returns) / np.std(daily_returns)) * np.sqrt(252) if np.std(daily_returns) != 0 else 0.0
+
+        self.history["train_mae"].append(train_mae)
+        self.history["val_mae"].append(val_mae)
+        self.history["val_mape"].append(val_mape)
+        self.history["val_r2"].append(val_r2)
+        self.history["val_sharpe"].append(sharpe)
+
+        if logs is not None:
+            logs["val_mae"] = val_mae
+
+
 def fetch_and_prepare_data(ticker, start="2020-01-01", end="2025-04-05"):
     data = yf.download(ticker, start=start, end=end)
     from ta.trend import SMAIndicator, MACD
     from ta.momentum import RSIIndicator
     from sklearn.preprocessing import MinMaxScaler
 
-    close_prices = data['Close'].squeeze()
-    data = data[['Close', 'Volume']]
-    data['SMA_20'] = SMAIndicator(close_prices, window=20).sma_indicator()
-    data['SMA_50'] = SMAIndicator(close_prices, window=50).sma_indicator()
-    data['RSI'] = RSIIndicator(close_prices, window=14).rsi()
+    close_prices = data["Close"].squeeze()
+    data = data[["Close", "Volume"]]
+    data["SMA_20"] = SMAIndicator(close_prices, window=20).sma_indicator()
+    data["SMA_50"] = SMAIndicator(close_prices, window=50).sma_indicator()
+    data["RSI"] = RSIIndicator(close_prices, window=14).rsi()
     macd = MACD(close_prices)
-    data['MACD'] = macd.macd()
-    data['MACD_Signal'] = macd.macd_signal()
+    data["MACD"] = macd.macd()
+    data["MACD_Signal"] = macd.macd_signal()
+
     data_clean = data.dropna()
     scaler = MinMaxScaler()
     scaled_data = scaler.fit_transform(data_clean)
+
     X, y = [], []
     look_back = 60
     for i in range(look_back, len(scaled_data)):
         X.append(scaled_data[i - look_back:i])
         y.append(scaled_data[i, 0])
+
     return np.array(X), np.array(y), data_clean, scaler, look_back
 
-# Strategy
-def moving_average(data, window=3):
-    return np.convolve(data, np.ones(window)/window, mode='valid')
 
-def trading_strategy(predictions, last_date, future_dates):
-    positions, cash, shares = [], 10000, 0
-    initial_cash = cash
-    stop_loss, take_profit, window = 0.05, 0.1, 3
-    ma_predictions = moving_average(predictions, window)
-    ma_indices = range(window - 1, len(predictions))
-    entry_price = 0
-    for i in ma_indices:
-        pred_price = predictions[i]
-        trade_date = future_dates[i].strftime("%m%d%Y")
-        ma_current = ma_predictions[i - (window - 1)]
-        ma_previous = ma_predictions[i - window] if i > window - 1 else ma_predictions[0]
-        if ma_current > ma_previous and cash > pred_price and pred_price > 0:
-            shares_to_buy = max(1, int(cash / pred_price))
-            shares += shares_to_buy
-            cash -= shares_to_buy * pred_price
-            entry_price = pred_price
-            positions.append(f"{trade_date} Buy {shares_to_buy} shares at ${pred_price:.2f}")
-        elif shares > 0:
-            if pred_price <= entry_price * (1 - stop_loss) or pred_price >= entry_price * (1 + take_profit):
-                cash += shares * pred_price
-                positions.append(f"{trade_date} Sell {shares} shares at ${pred_price:.2f}")
-                shares = 0
-    return positions, f"${cash:.2f}", "Go" if cash > initial_cash else "No Go"
-
-# Predictor
 def predict_future(model, last_sequence, scaler, look_back, future_days):
     predictions = []
     current_sequence = last_sequence.copy()
@@ -88,14 +101,17 @@ def predict_future(model, last_sequence, scaler, look_back, future_days):
     padded = np.concatenate((predictions, np.zeros((len(predictions), 6))), axis=1)
     return np.maximum(scaler.inverse_transform(padded)[:, 0], 0)
 
-# Thread (updated for fine-tuning)
+
 class ModelTrainerThread(QThread):
-    finished = pyqtSignal(dict, str, object)
+    finished = pyqtSignal(dict, str, object, dict)
 
     def __init__(self, ticker, X, y, data, scaler, look_back, model_builder, predictor, use_quantum=False):
         super().__init__()
         self.ticker = ticker
-        self.X, self.y, self.data, self.scaler, self.look_back = X, y, data, scaler, look_back
+        self.X, self.y = X, y
+        self.data = data
+        self.scaler = scaler
+        self.look_back = look_back
         self.model_builder = model_builder
         self.predictor = predictor
         self.use_quantum = use_quantum
@@ -105,55 +121,61 @@ class ModelTrainerThread(QThread):
     def run(self):
         results = {}
         last_date = self.data.index[-1]
-
-        # Split data into train and validation
         train_size = int(len(self.X) * 0.8)
         X_train, X_val = self.X[:train_size], self.X[train_size:]
         y_train, y_val = self.y[:train_size], self.y[train_size:]
 
         if self.use_quantum:
-            # Load or initialize quantum weights
             weights_path = f"{self.model_dir}/quantum_weights.npy"
             if os.path.exists(weights_path):
                 weights = qnp.load(weights_path)
             else:
-                weights = qnp.random.random(4, requires_grad=True)  # n_qubits = 4 from quantum.py
+                weights = qnp.random.random(4, requires_grad=True)
             weights = self.predictor.optimize(X_train, y_train, iterations=100, verbose=True)
-            qnp.save(weights_path, weights)  # Fixed argument order
-            pred_func = lambda seq, days, horizon: self.predictor.predict(seq, weights, self.scaler, self.look_back, days, horizon)
+            qnp.save(weights_path, weights)
+            pred_func = lambda seq, days, horizon: self.predictor.predict(
+                seq, weights, self.scaler, self.look_back, days, horizon
+            )
+            self.history = {}
         else:
-            # Load or build model
-            model_path = f"{self.model_dir}/lstm_model.keras" if self.model_builder == build_lstm_model else f"{self.model_dir}/transformer_model.keras"
+            model_key = (
+                "lstm_model" if self.model_builder == build_lstm_model else
+                "transformer_model" if self.model_builder == build_transformer_model else
+                "gru_cnn_model"
+            )
+            model_path = f"{self.model_dir}/{model_key}.keras"
             if os.path.exists(model_path):
                 try:
                     model = load_model(model_path)
                 except Exception as e:
-                    print(f"Failed to load model: {e}. Building new model.")
+                    print(f"Model load failed: {e}. Rebuilding.")
                     model = self.model_builder((self.X.shape[1], self.X.shape[2]))
             else:
                 model = self.model_builder((self.X.shape[1], self.X.shape[2]))
 
-            # Fine-tune with validation
-            model.compile(optimizer='adam', loss='mse')
-            checkpoint = ModelCheckpoint(model_path, save_best_only=True, monitor='val_loss')
-            early_stopping = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)
-            model.fit(
+            checkpoint = ModelCheckpoint(model_path, save_best_only=True, monitor="val_loss")
+            early_stopping = EarlyStopping(monitor="val_loss", patience=3, restore_best_weights=True)
+            metrics_tracker = MetricsTrackingCallback(X_train, y_train, X_val, y_val)
+
+            history = model.fit(
                 X_train, y_train,
                 epochs=10,
                 batch_size=32,
                 validation_data=(X_val, y_val),
-                callbacks=[checkpoint, early_stopping],
+                callbacks=[checkpoint, early_stopping, metrics_tracker],
                 verbose=0
             )
-            model.save(model_path)  # Save using .keras format
+            model.save(model_path)
+            self.history = history.history
+            self.history.update(metrics_tracker.history)
+
             pred_func = lambda seq, days, horizon: predict_future(model, seq, self.scaler, self.look_back, days)
 
         last_seq = self.X[-1]
         for label, days in {"Short": 30, "Medium": 90, "Long": 365}.items():
             results[label] = pred_func(last_seq, days, label)
-        self.finished.emit(results, self.ticker, last_date)
+        self.finished.emit(results, self.ticker, last_date, self.history)
 
-# GUI
 class StockTradingGUI(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -164,6 +186,7 @@ class StockTradingGUI(QMainWindow):
         self.ticker_data = {}
         self.output_texts = {}
         self.training_thread = None
+        self.current_model = ""
 
         main = QWidget(self)
         self.setCentralWidget(main)
@@ -177,8 +200,9 @@ class StockTradingGUI(QMainWindow):
         button_layout = QHBoxLayout()
         self.lstm_btn = QPushButton("Run LSTM")
         self.trans_btn = QPushButton("Run Transformer")
+        self.gru_cnn_btn = QPushButton("Run GRU+CNN")
         self.q_btn = QPushButton("Run Quantum")
-        for b in [self.lstm_btn, self.trans_btn, self.q_btn]:
+        for b in [self.lstm_btn, self.trans_btn, self.gru_cnn_btn, self.q_btn]:
             button_layout.addWidget(b)
         layout.addLayout(button_layout)
 
@@ -187,26 +211,43 @@ class StockTradingGUI(QMainWindow):
         self.progress.hide()
         layout.addWidget(self.progress)
 
+        self.tabs = QTabWidget()
+        self.forecast_tab = QWidget()
+        self.training_tab = QWidget()
+        self.tabs.addTab(self.forecast_tab, "Forecast")
+        self.tabs.addTab(self.training_tab, "Training Diagnostics")
+        layout.addWidget(self.tabs)
+
+        # Forecast tab layout
+        self.forecast_layout = QVBoxLayout(self.forecast_tab)
         output_layout = QHBoxLayout()
         for label in ["Short", "Medium", "Long"]:
             box = QTextEdit()
             box.setReadOnly(True)
             self.output_texts[label] = box
             output_layout.addWidget(box)
-        layout.addLayout(output_layout)
+        self.forecast_layout.addLayout(output_layout)
 
-        self.figure = plt.Figure()
-        self.canvas = FigureCanvas(self.figure)
-        layout.addWidget(self.canvas)
+        self.forecast_figure = plt.Figure()
+        self.forecast_canvas = FigureCanvas(self.forecast_figure)
+        self.forecast_layout.addWidget(self.forecast_canvas)
+
+        # Training tab layout
+        self.training_layout = QVBoxLayout(self.training_tab)
+        self.training_figure = plt.Figure()
+        self.training_canvas = FigureCanvas(self.training_figure)
+        self.training_layout.addWidget(self.training_canvas)
 
         self.lstm_btn.clicked.connect(lambda: self.run("LSTM"))
         self.trans_btn.clicked.connect(lambda: self.run("Transformer"))
+        self.gru_cnn_btn.clicked.connect(lambda: self.run("GRUCNN"))
         self.q_btn.clicked.connect(lambda: self.run("Quantum"))
 
     def run(self, mode):
         self.progress.show()
         self.toggle_buttons(False, mode)
 
+        self.current_model = mode
         ticker = self.ticker_combo.currentText()
         if ticker not in self.ticker_data:
             X, y, data, scaler, look_back = fetch_and_prepare_data(ticker)
@@ -226,6 +267,10 @@ class StockTradingGUI(QMainWindow):
             trainer = ModelTrainerThread(ticker, X, y, data, scaler, look_back,
                                          build_transformer_model,
                                          predict_future)
+        elif mode == "GRUCNN":
+            trainer = ModelTrainerThread(ticker, X, y, data, scaler, look_back,
+                                         build_gru_cnn_model,
+                                         predict_future)
         else:
             trainer = ModelTrainerThread(ticker, X, y, data, scaler, look_back,
                                          build_lstm_model,
@@ -236,47 +281,81 @@ class StockTradingGUI(QMainWindow):
         trainer.start()
 
     def toggle_buttons(self, enable, running_label=""):
-        self.lstm_btn.setEnabled(enable)
-        self.trans_btn.setEnabled(enable)
-        self.q_btn.setEnabled(enable)
+        for btn, name in [
+            (self.lstm_btn, "LSTM"),
+            (self.trans_btn, "Transformer"),
+            (self.gru_cnn_btn, "GRUCNN"),
+            (self.q_btn, "Quantum")
+        ]:
+            btn.setEnabled(enable)
+            btn.setText("Running..." if name == running_label and not enable else f"Run {name.replace('GRUCNN', 'GRU+CNN')}")
 
-        btn_map = {
-            "LSTM": self.lstm_btn,
-            "Transformer": self.trans_btn,
-            "Quantum": self.q_btn
-        }
-        for name, btn in btn_map.items():
-            if name == running_label:
-                btn.setText("Running..." if not enable else f"Run {name}")
-            else:
-                btn.setText(f"Run {name}")
-
-    def on_complete(self, results, ticker, last_date):
+    def on_complete(self, results, ticker, last_date, history):
         self.progress.hide()
         self.toggle_buttons(True)
-        self.plot(results, last_date)
+        self.plot_forecast(results, last_date)
+        self.plot_training_curves(history)
 
         for label, preds in results.items():
             future_dates = [last_date + timedelta(days=i) for i in range(1, len(preds) + 1)]
-            trades, cash, go = trading_strategy(preds, last_date, future_dates)
-            self.output_texts[label].setText(
-                f"Initial $10K\n{label} Trades:\n" + "\n".join(trades) + f"\nCash: {cash}\nDecision: {go}"
-            )
+            trades, cash, go, stats = trading_strategy(preds, last_date, future_dates)
+            summary = f"Initial $10K\n{label} Trades:\n" + "\n".join(trades) + f"\nCash: {cash}\nDecision: {go}\n"
+            summary += "\n" + "\n".join(f"{k}: {v}" for k, v in stats.items())
+            self.output_texts[label].setText(summary)
 
-    def plot(self, pred_dict, last_date):
-        self.figure.clear()
-        ax = self.figure.add_subplot(111)
+    def plot_forecast(self, pred_dict, last_date):
+        self.forecast_figure.clear()
+        ax = self.forecast_figure.add_subplot(111)
         real = self.ticker_data[self.ticker_combo.currentText()]["data"]
         ax.plot(real.index, real["Close"], label="Actual", color="blue")
         base = [last_date + timedelta(days=i) for i in range(1, 366)]
         ax.plot(base[:30], pred_dict["Short"], label="Short", color="green")
         ax.plot(base[30:90], pred_dict["Medium"][-60:], label="Medium", color="orange")
         ax.plot(base[90:], pred_dict["Long"][-275:], label="Long", color="red")
-        ax.set_title(f"{self.ticker_combo.currentText()} Forecast")
+        ax.set_title(f"{self.ticker_combo.currentText()} {self.current_model} Forecast")
         ax.legend()
-        self.canvas.draw()
+        self.forecast_canvas.draw()
 
-# Run the app
+    def plot_training_curves(self, history):
+        self.training_figure.clear()
+        if not history:
+            print("No training history available.")
+            return
+
+        print("Training history keys:", list(history.keys()))
+
+        # Use constrained layout for spacing
+        self.training_figure.set_constrained_layout(True)
+        gs = self.training_figure.add_gridspec(3, 1)
+
+        # Loss plot
+        ax1 = self.training_figure.add_subplot(gs[0, 0])
+        ax1.plot(history.get("loss", []), label="Train Loss")
+        ax1.plot(history.get("val_loss", []), label="Val Loss")
+        ax1.set_title("Loss")
+        ax1.set_ylabel("MSE")
+        ax1.legend()
+
+        # MAE plot
+        ax2 = self.training_figure.add_subplot(gs[1, 0])
+        ax2.plot(history.get("train_mae", []), label="Train MAE")
+        ax2.plot(history.get("val_mae", []), label="Val MAE")
+        ax2.set_title("Mean Absolute Error")
+        ax2.set_ylabel("MAE")
+        ax2.legend()
+
+        # Validation metrics plot
+        ax3 = self.training_figure.add_subplot(gs[2, 0])
+        ax3.plot(history.get("val_mape", []), label="Val MAPE")
+        ax3.plot(history.get("val_r2", []), label="Val R²")
+        ax3.plot(history.get("val_sharpe", []), label="Sharpe Ratio")
+        ax3.set_title("Validation Metrics")
+        ax3.set_ylabel("Metric Value")
+        ax3.legend()
+
+        self.training_canvas.draw()
+
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     win = StockTradingGUI()
