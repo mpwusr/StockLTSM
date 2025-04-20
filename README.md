@@ -1,8 +1,3 @@
-Here's a complete and polished `README.md` for your [`StockLTSMTransformerQuantum`](https://github.com/mpwusr/StockLTSMTransformerQuantum) repository:
-
----
-
-```markdown
 # 📈 StockLTSMTransformerQuantum
 
 A PyQt5-based AI stock forecasting app that combines classical and quantum machine learning models to simulate, visualize, and evaluate trading strategies across multiple time horizons (Short / Medium / Long).
