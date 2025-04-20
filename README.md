@@ -141,5 +141,6 @@ MIT License © [mpwusr](https://github.com/mpwusr)
 ---
 
 ## 🙌 Acknowledgments
+based to some extent on https://medium.com/@albertoglvz25/predicting-stock-prices-with-an-lstm-model-in-python-26c7377b8ecb
 
 Thanks to [PennyLane](https://pennylane.ai/), [Keras](https://keras.io/), and [Polygon.io](https://polygon.io/) for APIs and tooling.
