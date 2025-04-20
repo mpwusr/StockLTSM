@@ -1,38 +1,38 @@
-# 📈 StockLTSMTransformerQuantum
+# StockLTSMTransformerQuantum
 
 A PyQt5-based AI stock forecasting app that combines classical and quantum machine learning models to simulate, visualize, and evaluate trading strategies across multiple time horizons (Short / Medium / Long).
 
 ---
 
-## 🔍 Overview
+## Overview
 
 **StockLTSMTransformerQuantum** is an end-to-end forecasting and trading simulation toolkit that enables side-by-side comparison of:
 
-- 🧠 LSTM (Long Short-Term Memory)
-- 🧠 Transformer
-- 🧠 GRU + CNN Hybrid
-- ⚛️ QML (Quantum Machine Learning via PennyLane)
+- LSTM (Long Short-Term Memory)
+- Transformer
+- GRU + CNN Hybrid
+- ⚛QML (Quantum Machine Learning via PennyLane)
 
 It features a GUI for interactive use, real-time model training diagnostics, metrics visualizations, trading signal simulation, and optional debug logging.
 
 ---
 
-## 🚀 Features
+## Features
 
-- ✅ GUI built with PyQt5
-- ✅ Multi-tab layout (Forecasts + Training Diagnostics)
-- ✅ Model comparison with MAE, MAPE, R², Sharpe Ratio
-- ✅ Toggleable debug logs
-- ✅ Support for both Yahoo Finance and Polygon.io as data providers
-- ✅ Training and forecast export (CSV)
-- ✅ Training history auto-saved per model
-- ✅ "Save Forecast" and "Open Folder" buttons
-- ✅ Color-coded plots and dropdown data source switching
-- ✅ Robust exception handling and logging
+- GUI built with PyQt5
+- Multi-tab layout (Forecasts + Training Diagnostics)
+- Model comparison with MAE, MAPE, R², Sharpe Ratio
+- Toggleable debug logs
+- Support for both Yahoo Finance and Polygon.io as data providers
+- Training and forecast export (CSV)
+- Training history auto-saved per model
+- "Save Forecast" and "Open Folder" buttons
+- Color-coded plots and dropdown data source switching
+- Robust exception handling and logging
 
 ---
 
-## 📊 Models
+## Models
 
 | Model        | Architecture             | Highlights                       |
 |--------------|--------------------------|-----------------------------------|
@@ -43,7 +43,7 @@ It features a GUI for interactive use, real-time model training diagnostics, met
 
 ---
 
-## 🖼 GUI Preview
+## GUI Preview
 
 | Forecast Tab                          | Training Diagnostics Tab            |
 |--------------------------------------|-------------------------------------|
@@ -51,7 +51,7 @@ It features a GUI for interactive use, real-time model training diagnostics, met
 
 ---
 
-## 🧰 Installation
+## Installation
 
 ```bash
 git clone https://github.com/mpwusr/StockLTSMTransformerQuantum.git
@@ -63,7 +63,7 @@ pip install -r requirements.txt
 
 ---
 
-## 🛠 Usage
+## Usage
 
 1. Set your `.env` file:
 
@@ -82,7 +82,7 @@ python main.py
 
 ---
 
-## 📂 Directory Structure
+## Directory Structure
 
 ```
 ├── data_provider.py         # Unified stock data API
@@ -98,7 +98,7 @@ python main.py
 
 ---
 
-## 📈 Sample Output
+## Sample Output
 
 ```text
 ✅ Training log saved to training_logs/AAPL/lstm_training_log_20250420_1012.csv
@@ -110,7 +110,7 @@ python main.py
 
 ---
 
-## 📊 Model Comparison Snapshot
+## Model Comparison Snapshot
 
 | Model      | Val MAE | Sharpe | MAPE (%) | R²     |
 |------------|---------|--------|----------|--------|
@@ -121,7 +121,7 @@ python main.py
 
 ---
 
-## 🧠 Built With
+## Built With
 
 - Python 3.12
 - PyQt5
@@ -140,7 +140,7 @@ MIT License © [mpwusr](https://github.com/mpwusr)
 
 ---
 
-## 🙌 Acknowledgments
+## Acknowledgments
 based to some extent on https://medium.com/@albertoglvz25/predicting-stock-prices-with-an-lstm-model-in-python-26c7377b8ecb
 
 Thanks to [PennyLane](https://pennylane.ai/), [Keras](https://keras.io/), and [Polygon.io](https://polygon.io/) for APIs and tooling.
