@@ -15,6 +15,11 @@ from models import build_lstm_model, build_transformer_model
 from quantum import optimize_quantum_weights, quantum_predict_future
 from utils import load_tickers_from_env
 
+# Add imports for fine-tuning and model persistence
+import os
+import pennylane.numpy as qnp
+from tensorflow.keras.models import load_model
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
 
 # Fetch and preprocess stock data
 def fetch_and_prepare_data(ticker, start="2020-01-01", end="2025-04-05"):
@@ -83,7 +88,7 @@ def predict_future(model, last_sequence, scaler, look_back, future_days):
     padded = np.concatenate((predictions, np.zeros((len(predictions), 6))), axis=1)
     return np.maximum(scaler.inverse_transform(padded)[:, 0], 0)
 
-# Thread
+# Thread (updated for fine-tuning)
 class ModelTrainerThread(QThread):
     finished = pyqtSignal(dict, str, object)
 
@@ -94,21 +99,58 @@ class ModelTrainerThread(QThread):
         self.model_builder = model_builder
         self.predictor = predictor
         self.use_quantum = use_quantum
+        self.model_dir = f"models/{ticker}"
+        os.makedirs(self.model_dir, exist_ok=True)
 
     def run(self):
         results = {}
         last_date = self.data.index[-1]
+
+        # Split data into train and validation
+        train_size = int(len(self.X) * 0.8)
+        X_train, X_val = self.X[:train_size], self.X[train_size:]
+        y_train, y_val = self.y[:train_size], self.y[train_size:]
+
         if self.use_quantum:
-            weights = self.predictor.optimize(self.X, self.y)
-            pred_func = lambda seq, days: self.predictor.predict(seq, weights, self.scaler, self.look_back, days)
+            # Load or initialize quantum weights
+            weights_path = f"{self.model_dir}/quantum_weights.npy"
+            if os.path.exists(weights_path):
+                weights = qnp.load(weights_path)
+            else:
+                weights = qnp.random.random(4, requires_grad=True)  # n_qubits = 4 from quantum.py
+            weights = self.predictor.optimize(X_train, y_train, iterations=100, verbose=True)
+            qnp.save(weights_path, weights)  # Fixed argument order
+            pred_func = lambda seq, days, horizon: self.predictor.predict(seq, weights, self.scaler, self.look_back, days, horizon)
         else:
-            model = self.model_builder((self.X.shape[1], self.X.shape[2]))
-            model.fit(self.X, self.y, epochs=10, batch_size=32, verbose=0)
-            pred_func = lambda seq, days: predict_future(model, seq, self.scaler, self.look_back, days)
+            # Load or build model
+            model_path = f"{self.model_dir}/lstm_model.keras" if self.model_builder == build_lstm_model else f"{self.model_dir}/transformer_model.keras"
+            if os.path.exists(model_path):
+                try:
+                    model = load_model(model_path)
+                except Exception as e:
+                    print(f"Failed to load model: {e}. Building new model.")
+                    model = self.model_builder((self.X.shape[1], self.X.shape[2]))
+            else:
+                model = self.model_builder((self.X.shape[1], self.X.shape[2]))
+
+            # Fine-tune with validation
+            model.compile(optimizer='adam', loss='mse')
+            checkpoint = ModelCheckpoint(model_path, save_best_only=True, monitor='val_loss')
+            early_stopping = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)
+            model.fit(
+                X_train, y_train,
+                epochs=10,
+                batch_size=32,
+                validation_data=(X_val, y_val),
+                callbacks=[checkpoint, early_stopping],
+                verbose=0
+            )
+            model.save(model_path)  # Save using .keras format
+            pred_func = lambda seq, days, horizon: predict_future(model, seq, self.scaler, self.look_back, days)
 
         last_seq = self.X[-1]
         for label, days in {"Short": 30, "Medium": 90, "Long": 365}.items():
-            results[label] = pred_func(last_seq, days)
+            results[label] = pred_func(last_seq, days, label)
         self.finished.emit(results, self.ticker, last_date)
 
 # GUI
