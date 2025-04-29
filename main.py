@@ -1,29 +1,27 @@
-import sys
 import os
-import numpy as np
-import matplotlib.pyplot as plt
+import sys
 from datetime import timedelta
-import yfinance as yf
-from sklearn.metrics import (
-    mean_absolute_error, mean_absolute_percentage_error, r2_score
-)
 
+import matplotlib.pyplot as plt
+import numpy as np
+import pennylane.numpy as qnp
 from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QComboBox, QPushButton, QTextEdit, QProgressBar, QTabWidget, QCheckBox
 )
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from sklearn.metrics import (
+    mean_absolute_error, mean_absolute_percentage_error, r2_score
+)
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, Callback
+from tensorflow.keras.models import load_model
 
 from data_provider import fetch_stock_data
 from models import build_lstm_model, build_transformer_model, build_gru_cnn_model
 from quantum import optimize_quantum_weights, quantum_predict_future
-from utils import load_tickers_from_env
 from trading import trading_strategy
-
-from tensorflow.keras.models import load_model
-from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, Callback
-import pennylane.numpy as qnp
+from utils import load_tickers_from_env
 
 MODEL_COLORS = {
     "LSTM": "blue",
