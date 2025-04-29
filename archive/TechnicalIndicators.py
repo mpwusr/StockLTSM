@@ -1,11 +1,10 @@
 import numpy as np
-import pandas as pd
 import yfinance as yf
-from ta.trend import SMA, MACD
-from ta.momentum import RSIIndicator
 from sklearn.preprocessing import MinMaxScaler
-from tensorflow.keras.models import Sequential
+from ta.momentum import RSIIndicator
+from ta.trend import SMA, MACD
 from tensorflow.keras.layers import LSTM, Dense, Dropout
+from tensorflow.keras.models import Sequential
 
 # Assume your data loading and LSTM setup exists
 # Example: Fetching data

@@ -1,9 +1,9 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import yfinance as yf
-from keras.models import Sequential
-from keras.layers import LSTM, Dense
 from keras import Input
+from keras.layers import LSTM, Dense
+from keras.models import Sequential
 from sklearn.preprocessing import MinMaxScaler
 
 # Download historical price data from Yahoo Finance

@@ -1,8 +1,7 @@
-
 import os
 import sys
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -12,7 +11,7 @@ import requests
 from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QComboBox, QPushButton, QTextEdit, QProgressBar, QTabWidget, QCheckBox
+    QLabel, QComboBox, QPushButton, QTextEdit, QProgressBar, QTabWidget, QCheckBox, QLineEdit
 )
 from dotenv import load_dotenv
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -24,6 +23,8 @@ from tensorflow.keras.models import load_model
 
 from models import build_lstm_model, build_transformer_model, build_gru_cnn_model, trading_strategy, \
     optimize_quantum_weights, quantum_predict_future
+
+warnings.filterwarnings("ignore", category=UserWarning, module="keras")
 
 MODEL_COLORS = {
     "LSTM": "blue",
@@ -54,9 +55,6 @@ def load_tickers_from_env():
     return os.getenv("TICKERS", "").split(",")
 
 
-### ---------------------------
-### Yahoo Finance (via yFinance)
-### ---------------------------
 def fetch_from_yahoo(ticker, start="2020-01-01", end="2025-04-05"):
     import yfinance as yf
     log(f"Fetching {ticker} from Yahoo Finance")
@@ -66,14 +64,10 @@ def fetch_from_yahoo(ticker, start="2020-01-01", end="2025-04-05"):
     return df
 
 
-### ---------------------------
-### Polygon.io (via requests)
-### ---------------------------
 def fetch_from_polygon(ticker, start="2020-01-01", end="2025-04-05", retries=3, backoff=2):
     POLYGON_KEY = os.getenv("POLYGON_API_KEY")
     if not POLYGON_KEY:
         raise RuntimeError("POLYGON_API_KEY not found in environment")
-
     url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/{start}/{end}"
     params = {
         "adjusted": "true",
@@ -81,42 +75,55 @@ def fetch_from_polygon(ticker, start="2020-01-01", end="2025-04-05", retries=3, 
         "limit": 50000,
         "apiKey": POLYGON_KEY
     }
-
     for attempt in range(1, retries + 1):
         try:
             log(f"Attempt {attempt}: Fetching {ticker} from Polygon")
-            res = requests.get(url, params=params)
+            res = requests.get(url, params=params, timeout=10)
             res.raise_for_status()
-            results = res.json().get("results", [])
+
+            data = res.json()
+            results = data.get("results", [])
             if not results:
-                raise ValueError("Empty results")
-            df = pd.DataFrame(results)
+                raise ValueError(f"No data returned for {ticker} in given range.")
+            df = pd.DataFrame(results)[['o', 'h', 'l', 'c', 'v', 't']]
+            df.columns = ['Open', 'High', 'Low', 'Close', 'Volume', 't']
             df['t'] = pd.to_datetime(df['t'], unit='ms')
             df.set_index('t', inplace=True)
-            df.rename(columns={
-                'o': 'Open', 'h': 'High', 'l': 'Low', 'c': 'Close', 'v': 'Volume'
-            }, inplace=True)
             return df[['Open', 'High', 'Low', 'Close', 'Volume']]
         except Exception as e:
             log(f"Polygon fetch error: {e}")
             if attempt < retries:
-                time.sleep(backoff ** attempt)
+                wait = min(30, backoff ** attempt)
+                log(f"Retrying in {wait}s...")
+                time.sleep(wait)
             else:
-                raise
+                raise RuntimeError(f"Failed to fetch {ticker} from Polygon after {retries} attempts.") from e
 
 
-### ---------------------------
-### Unified interface with fallback + caching
-### ---------------------------
-def fetch_stock_data(ticker, source="polygon", start="2020-01-01", end="2025-04-05", use_cache=True):
+def resolve_date_range(start=None, end=None, years_ago=None):
+    today = datetime.today().date()
+
+    if years_ago:
+        start_date = today - timedelta(days=365 * years_ago)
+        end_date = today
+    else:
+        start_date = datetime.strptime(start, "%Y-%m-%d").date() if start else datetime(2020, 1, 1).date()
+        end_date = datetime.strptime(end, "%Y-%m-%d").date() if end else today
+
+    if start_date > end_date:
+        raise ValueError("Start date must be before end date.")
+
+    return start_date.isoformat(), end_date.isoformat()
+
+
+def fetch_stock_data(ticker, source="polygon", start=None, end=None, years_ago=None, use_cache=True):
+    start, end = resolve_date_range(start, end, years_ago)
     cache_file = os.path.join(CACHE_DIR, f"{ticker}_{source}_{start}_{end}.csv")
 
-    # Try loading from cache
     if use_cache and os.path.exists(cache_file):
         log(f"Loading {ticker} from cache")
         return pd.read_csv(cache_file, index_col=0, parse_dates=True)
 
-    # Try preferred source
     try:
         if source == "polygon":
             df = fetch_from_polygon(ticker, start, end)
@@ -132,7 +139,6 @@ def fetch_stock_data(ticker, source="polygon", start="2020-01-01", end="2025-04-
         else:
             raise
 
-    # Save to cache
     if use_cache:
         df.to_csv(cache_file)
         log(f"Saved {ticker} data to cache: {cache_file}")
@@ -176,13 +182,11 @@ class MetricsTrackingCallback(Callback):
             logs["val_mae"] = val_mae
 
 
-def fetch_and_prepare_data(ticker, source="polygon", start="2020-01-01", end="2025-04-05"):
+def fetch_and_prepare_data(ticker, source="polygon", start=None, end=None, years_ago=None):
     from ta.trend import SMAIndicator, MACD
     from ta.momentum import RSIIndicator
     from sklearn.preprocessing import MinMaxScaler
-
-    data = fetch_stock_data(ticker, source=source, start=start, end=end)
-
+    data = fetch_stock_data(ticker, source=source, start=start, end=end, years_ago=years_ago)
     close_prices = data['Close'].squeeze()
     data['SMA_20'] = SMAIndicator(close_prices, window=20).sma_indicator()
     data['SMA_50'] = SMAIndicator(close_prices, window=50).sma_indicator()
@@ -218,7 +222,7 @@ def predict_future(model, last_sequence, scaler, look_back, future_days):
 
     # ✅ Auto-determine how many features the scaler expects
     num_features = scaler.scale_.shape[0]
-    padding = num_features - 1  # already have Close prediction
+    padding = num_features - 1
     padded = np.concatenate((predictions, np.zeros((len(predictions), padding))), axis=1)
 
     return np.maximum(scaler.inverse_transform(padded)[:, 0], 0)
@@ -314,7 +318,7 @@ class ModelTrainerThread(QThread):
         csv_path = os.path.join(log_dir, f"{model_tag}_training_log_{timestamp}.csv")
         pd.DataFrame(self.history).to_csv(csv_path, index=False)
 
-        print(f"✅ Training log saved to {csv_path}")
+        print(f" Training log saved to {csv_path}")
 
 
 class StockTradingGUI(QMainWindow):
@@ -370,6 +374,27 @@ class StockTradingGUI(QMainWindow):
         layout.addWidget(QLabel("Select Data Source:"))
         layout.addWidget(self.source_combo)
 
+        # Date Range Picker Controls
+        layout.addWidget(QLabel("Select Date Range:"))
+        self.date_range_combo = QComboBox()
+        self.date_range_combo.addItems([
+            "Default (2020–Today)", "Last 2 years", "Last 3 years", "Last 5 years", "Custom Range"
+        ])
+        layout.addWidget(self.date_range_combo)
+
+        # Custom start/end date inputs (hidden by default)
+        self.start_input = QLineEdit()
+        self.end_input = QLineEdit()
+        self.start_input.setPlaceholderText("Start Date (YYYY-MM-DD)")
+        self.end_input.setPlaceholderText("End Date (YYYY-MM-DD)")
+        self.start_input.hide()
+        self.end_input.hide()
+        layout.addWidget(self.start_input)
+        layout.addWidget(self.end_input)
+
+        # Handle dropdown change
+        self.date_range_combo.currentIndexChanged.connect(self.toggle_custom_date_inputs)
+
         for b in [self.lstm_btn, self.trans_btn, self.gru_cnn_btn, self.q_btn]:
             button_layout.addWidget(b)
         layout.addLayout(button_layout)
@@ -411,6 +436,11 @@ class StockTradingGUI(QMainWindow):
         self.gru_cnn_btn.clicked.connect(lambda: self.run("GRUCNN"))
         self.q_btn.clicked.connect(lambda: self.run("QML"))
 
+    def toggle_custom_date_inputs(self):
+        is_custom = self.date_range_combo.currentText() == "Custom Range"
+        self.start_input.setVisible(is_custom)
+        self.end_input.setVisible(is_custom)
+
     def save_forecast(self):
         if not self.last_forecast or not self.last_ticker or not self.current_model:
             return
@@ -438,7 +468,6 @@ class StockTradingGUI(QMainWindow):
 
         self.save_button.setEnabled(False)
 
-        # ✅ Show popup
         QMessageBox.information(
             self,
             "Forecast Saved",
@@ -471,9 +500,28 @@ class StockTradingGUI(QMainWindow):
         self.current_model = mode
         ticker = self.ticker_combo.currentText()
         source = self.source_combo.currentText()
+        # Determine date parameters
+        range_option = self.date_range_combo.currentText()
+        start = end = None
+        years_ago = None
+
+        if "2" in range_option:
+            years_ago = 2
+        elif "3" in range_option:
+            years_ago = 3
+        elif "5" in range_option:
+            years_ago = 5
+        elif "Custom" in range_option:
+            start = self.start_input.text().strip()
+            end = self.end_input.text().strip()
+
         if ticker not in self.ticker_data:
-            X, y, data, scaler, look_back = fetch_and_prepare_data(ticker, source=source)
-            self.ticker_data[ticker] = {"X": X, "y": y, "data": data, "scaler": scaler, "look_back": look_back}
+            X, y, data, scaler, look_back = fetch_and_prepare_data(
+                ticker, source=source, start=start, end=end, years_ago=years_ago
+            )
+            self.ticker_data[ticker] = {
+                "X": X, "y": y, "data": data, "scaler": scaler, "look_back": look_back
+            }
 
         X, y, data, scaler, look_back = self.ticker_data[ticker].values()
 
@@ -554,7 +602,6 @@ class StockTradingGUI(QMainWindow):
 
         print("Training history keys:", list(history.keys()))
 
-        # Use constrained layout for spacing
         self.training_figure.set_constrained_layout(True)
         gs = self.training_figure.add_gridspec(3, 1)
 

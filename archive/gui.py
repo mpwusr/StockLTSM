@@ -1,7 +1,9 @@
 import sys
-from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton
+
 import matplotlib.pyplot as plt
+from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+
 
 # Assume the above functions (fetch_and_prepare_data, etc.) are defined or imported
 

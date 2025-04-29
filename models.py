@@ -1,5 +1,4 @@
 import warnings
-
 import pennylane as qml
 import pennylane.numpy as qnp
 from tensorflow.keras.layers import (
@@ -8,7 +7,6 @@ from tensorflow.keras.layers import (
 )
 from tensorflow.keras.metrics import MeanAbsoluteError, MeanAbsolutePercentageError
 from tensorflow.keras.models import Model
-
 warnings.filterwarnings("ignore", category=UserWarning, module="keras")
 import os
 import numpy as np
@@ -179,7 +177,7 @@ def build_transformer_model(input_shape):
     x = Add()([x, ffn_output])
     x = LayerNormalization(epsilon=1e-6)(x)
 
-    x = x[:, -1, :]  # extract last time step
+    x = x[:, -1, :]
     x = Dense(100, activation='relu')(x)
     x = Dropout(0.1)(x)
     x = Dense(50, activation='relu')(x)
@@ -248,7 +246,7 @@ def normalize_input(x):
     if len(x.shape) == 1:
         raw = x[:n_qubits]
     else:
-        raw = np.mean(x, axis=0)[:n_qubits]  # Average over time steps
+        raw = np.mean(x, axis=0)[:n_qubits]
 
     min_val = np.min(raw)
     max_val = np.max(raw)
