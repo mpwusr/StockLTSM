@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import yfinance as yf
 import warnings
 from datetime import datetime, timedelta
 from PyQt5.QtCore import Qt
@@ -8,7 +9,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pennylane.numpy as qnp
-import requests
 from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -16,14 +16,17 @@ from PyQt5.QtWidgets import (
 )
 from dotenv import load_dotenv
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, Callback
+from tensorflow.keras.models import load_model
 from sklearn.metrics import (
     mean_absolute_error, mean_absolute_percentage_error, r2_score
 )
-from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, Callback
-from tensorflow.keras.models import load_model
 
 from models import build_lstm_model, build_transformer_model, build_gru_cnn_model, trading_strategy, \
     optimize_quantum_weights, quantum_predict_future
+import requests
+
+ALPHA_BASE_URL = "https://www.alphavantage.co/query"
 
 warnings.filterwarnings("ignore", category=UserWarning, module="keras")
 
@@ -56,49 +59,94 @@ def load_tickers_from_env():
     return os.getenv("TICKERS", "").split(",")
 
 
-def fetch_from_yahoo(ticker, start="2020-01-01", end="2025-04-05"):
-    import yfinance as yf
-    log(f"Fetching {ticker} from Yahoo Finance")
-    df = yf.download(ticker, start=start, end=end)
-    if df.empty:
-        raise ValueError(f"No data from Yahoo for {ticker}")
-    return df
+def fetch_from_yahoo(ticker, start="2020-01-01", end="2025-04-05", retries=3, pause=1):
+    for attempt in range(1, retries+1):
+        try:
+            log(f"Fetching {ticker} from Yahoo Finance (attempt {attempt})")
+            df = yf.download(
+                ticker,
+                start=start,
+                end=end,
+                auto_adjust=True,
+                progress=False
+            )
+            if df.empty:
+                raise ValueError(f"No data from Yahoo for {ticker}")
+            return df
+        except Exception as e:
+            log(f"Yahoo fetch error: {e}")
+            if attempt < retries:
+                log(f"Sleeping {pause}s before retry…")
+                time.sleep(pause)
+            else:
+                raise
 
 
 def fetch_from_polygon(ticker, start="2020-01-01", end="2025-04-05", retries=3, backoff=2):
+    """
+    Fetch **all** daily bars for `ticker` from Polygon between start and end via paging.
+    Returns a DataFrame indexed by date with Open/High/Low/Close/Volume.
+    """
     POLYGON_KEY = os.getenv("POLYGON_API_KEY")
     if not POLYGON_KEY:
         raise RuntimeError("POLYGON_API_KEY not found in environment")
-    url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/{start}/{end}"
-    params = {
-        "adjusted": "true",
-        "sort": "asc",
-        "limit": 50000,
-        "apiKey": POLYGON_KEY
-    }
-    for attempt in range(1, retries + 1):
-        try:
-            log(f"Attempt {attempt}: Fetching {ticker} from Polygon")
-            res = requests.get(url, params=params, timeout=10)
-            res.raise_for_status()
 
-            data = res.json()
-            results = data.get("results", [])
-            if not results:
-                raise ValueError(f"No data returned for {ticker} in given range.")
-            df = pd.DataFrame(results)[['o', 'h', 'l', 'c', 'v', 't']]
-            df.columns = ['Open', 'High', 'Low', 'Close', 'Volume', 't']
-            df['t'] = pd.to_datetime(df['t'], unit='ms')
-            df.set_index('t', inplace=True)
-            return df[['Open', 'High', 'Low', 'Close', 'Volume']]
-        except Exception as e:
-            log(f"Polygon fetch error: {e}")
-            if attempt < retries:
-                wait = min(30, backoff ** attempt)
-                log(f"Retrying in {wait}s...")
-                time.sleep(wait)
-            else:
-                raise RuntimeError(f"Failed to fetch {ticker} from Polygon after {retries} attempts.") from e
+    all_results = []
+    current_start = start
+    limit = 50000  # Polygon's max per request
+
+    while True:
+        url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/{current_start}/{end}"
+        params = {
+            "adjusted": "true",
+            "sort": "asc",
+            "limit": limit,
+            "apiKey": POLYGON_KEY
+        }
+
+        # retry loop
+        for attempt in range(1, retries + 1):
+            try:
+                log(f"Attempt {attempt}: Fetching {ticker} from Polygon ({current_start} → {end})")
+                res = requests.get(url, params=params, timeout=10)
+                res.raise_for_status()
+                data = res.json()
+                batch = data.get("results", [])
+                break
+            except Exception as e:
+                log(f"Polygon fetch error: {e}")
+                if attempt < retries:
+                    wait = min(30, backoff ** attempt)
+                    log(f"Retrying in {wait}s…")
+                    time.sleep(wait)
+                else:
+                    raise RuntimeError(f"Failed to fetch {ticker} from Polygon after {retries} attempts.") from e
+
+        # no more data → done
+        if not batch:
+            break
+
+        # collect this batch
+        all_results.extend(batch)
+
+        # if fewer than our limit, we've exhausted the range
+        if len(batch) < limit:
+            break
+
+        # otherwise bump `current_start` to the day after the last bar
+        last_ts = batch[-1]["t"]  # in ms
+        last_date = datetime.utcfromtimestamp(last_ts / 1000).date()
+        current_start = (last_date + timedelta(days=1)).isoformat()
+
+    if not all_results:
+        raise ValueError(f"No data returned for {ticker} in given range.")
+
+    # assemble DataFrame
+    df = pd.DataFrame(all_results)[['o', 'h', 'l', 'c', 'v', 't']]
+    df.columns = ['Open', 'High', 'Low', 'Close', 'Volume', 't']
+    df['t'] = pd.to_datetime(df['t'], unit='ms')
+    df.set_index('t', inplace=True)
+    return df[['Open', 'High', 'Low', 'Close', 'Volume']]
 
 
 def resolve_date_range(start=None, end=None, years_ago=None):
@@ -114,18 +162,87 @@ def resolve_date_range(start=None, end=None, years_ago=None):
     return start_date.isoformat(), end_date.isoformat()
 
 
+def fetch_from_alphavantage(ticker: str, start: str = "2020-01-01", end: str = None) -> pd.DataFrame:
+    """
+    Fetch full daily OHLCV history for `ticker` from AlphaVantage,
+    then filter between start and end (inclusive).
+
+    - ticker: e.g. "IBM"
+    - start: "YYYY-MM-DD"
+    - end:   "YYYY-MM-DD" (defaults to today if None)
+
+    Returns a DataFrame indexed by Date with columns ["Open","High","Low","Close","Volume"].
+    """
+    api_key = os.getenv("ALPHAVANTAGE_API_KEY")
+    if not api_key:
+        raise RuntimeError("ALPHAVANTAGE_API_KEY not set in environment")
+
+    params = {
+        "function": "TIME_SERIES_DAILY_ADJUSTED",
+        "symbol": ticker,
+        "outputsize": "full",
+        "apikey": api_key,
+    }
+    resp = requests.get(ALPHA_BASE_URL, params=params, timeout=10)
+    resp.raise_for_status()
+    data = resp.json()
+
+    # Check for rate‐limit or errors
+    if "Error Message" in data:
+        raise RuntimeError(f"AlphaVantage error: {data['Error Message']}")
+    if "Time Series (Daily)" not in data:
+        raise RuntimeError(f"Unexpected response format: {data}")
+
+    # Build DataFrame
+    ts = data["Time Series (Daily)"]
+    df = pd.DataFrame.from_dict(ts, orient="index").sort_index()
+    df.index = pd.to_datetime(df.index)
+    df.rename(columns={
+        "1. open": "Open",
+        "2. high": "High",
+        "3. low": "Low",
+        "4. close": "Close",
+        "6. volume": "Volume",
+    }, inplace=True)
+
+    # Filter by date
+    start_dt = pd.to_datetime(start)
+    end_dt = pd.to_datetime(end) if end else pd.Timestamp.today()
+    df = df.loc[(df.index >= start_dt) & (df.index <= end_dt)]
+
+    # Cast to numeric
+    df = df.astype({
+        "Open": float,
+        "High": float,
+        "Low": float,
+        "Close": float,
+        "Volume": float,
+    })
+
+    return df[["Open", "High", "Low", "Close", "Volume"]]
+
+
 def fetch_stock_data(ticker, source="polygon", start=None, end=None, years_ago=None, use_cache=True):
+    custom_range = (start is not None and end is not None and years_ago is None)
     start, end = resolve_date_range(start, end, years_ago)
     cache_file = os.path.join(CACHE_DIR, f"{ticker}_{source}_{start}_{end}.csv")
+    if custom_range and os.path.exists(cache_file):
+        log(f"Custom range selected: removing old cache {cache_file}")
+        os.remove(cache_file)
+
 
     if use_cache and os.path.exists(cache_file):
         log(f"Loading {ticker} from cache")
         return pd.read_csv(cache_file, index_col=0, parse_dates=True)
     try:
+        days = (datetime.fromisoformat(end) - datetime.fromisoformat(start)).days
+
         if source == "polygon":
             df = fetch_from_polygon(ticker, start, end)
         elif source == "yahoo":
             df = fetch_from_yahoo(ticker, start, end)
+        elif source == "alphavantage":
+            df = fetch_from_alphavantage(ticker, start=start, end=end)
         else:
             raise ValueError(f"Unsupported data source: {source}")
     except Exception as e:
@@ -304,6 +421,7 @@ class ModelTrainerThread(QThread):
 class StockTradingGUI(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.training_axes_initialized = None
         self.compare_forecast = None
         self.compare_history = None
         self.compare_ticker = None
@@ -319,6 +437,9 @@ class StockTradingGUI(QMainWindow):
 
         self.tickers = load_tickers_from_env()
         self.ticker_data = {}
+        self.ticker_data = {}
+        self.current_data_key = None
+        self.compare_data_key = None
         self.output_texts = {}
         self.training_thread = None
         self.current_model = ""
@@ -357,7 +478,7 @@ class StockTradingGUI(QMainWindow):
         button_row.addWidget(self.view_folder_button)
         layout.addLayout(button_row)
         self.source_combo = QComboBox()
-        self.source_combo.addItems(["polygon", "yahoo"])
+        self.source_combo.addItems(["polygon", "yahoo", "alphavantage"])
         layout.addWidget(QLabel("Select Data Source:"))
         layout.addWidget(self.source_combo)
         layout.addWidget(QLabel("Select Date Range:"))
@@ -498,17 +619,34 @@ class StockTradingGUI(QMainWindow):
             start = self.start_input.text().strip()
             end = self.end_input.text().strip()
 
-        if ticker not in self.ticker_data:
+        # Primary cache key
+        key = (ticker, source, start, end, years_ago)
+        if key not in self.ticker_data:
             X, y, data, scaler, look_back = fetch_and_prepare_data(
                 ticker, source=source, start=start, end=end, years_ago=years_ago
             )
-            self.ticker_data[ticker] = {
-                "X": X, "y": y, "data": data, "scaler": scaler, "look_back": look_back
-            }
+            self.ticker_data[key] = {"X": X, "y": y, "data": data, "scaler": scaler, "look_back": look_back}
+        self.current_data_key = key
+        X, y, data, scaler, look_back = self.ticker_data[key].values()
 
-        X, y, data, scaler, look_back = self.ticker_data[ticker].values()
+        # Launch main training thread (unchanged)
+        # … (existing ModelTrainerThread setup) …
 
-        # Launch main thread
+        # Handle optional comparison
+        if compare_enabled and compare_ticker != ticker:
+            compare_key = (compare_ticker, source, start, end, years_ago)
+            if compare_key not in self.ticker_data:
+                X2, y2, data2, scaler2, look_back2 = fetch_and_prepare_data(
+                    compare_ticker, source=source, start=start, end=end, years_ago=years_ago
+                )
+                self.ticker_data[compare_key] = {"X": X2, "y": y2, "data": data2, "scaler": scaler2,
+                                                 "look_back": look_back2}
+            self.compare_data_key = compare_key
+            X2, y2, data2, scaler2, look_back2 = self.ticker_data[compare_key].values()
+        # Save the key for later (e.g., when plotting or saving forecasts)
+        self.current_data_key = key
+
+        # Launch main training thread
         if mode == "Quantum":
             trainer = ModelTrainerThread(ticker, X, y, data, scaler, look_back,
                                          lambda _: None,
@@ -530,18 +668,16 @@ class StockTradingGUI(QMainWindow):
         trainer.finished.connect(self.on_complete)
         self.training_thread = trainer
         trainer.start()
-
-        # Launch compare thread if enabled
         if compare_enabled and compare_ticker != ticker:
-            if compare_ticker not in self.ticker_data:
+            compare_key = (compare_ticker, source, start, end, years_ago)
+            if compare_key not in self.ticker_data:
                 X2, y2, data2, scaler2, look_back2 = fetch_and_prepare_data(
                     compare_ticker, source=source, start=start, end=end, years_ago=years_ago
                 )
-                self.ticker_data[compare_ticker] = {
-                    "X": X2, "y": y2, "data": data2, "scaler": scaler2, "look_back": look_back2
-                }
-            else:
-                X2, y2, data2, scaler2, look_back2 = self.ticker_data[compare_ticker].values()
+                self.ticker_data[compare_key] = {"X": X2, "y": y2, "data": data2, "scaler": scaler2,
+                                                 "look_back": look_back2}
+            self.compare_data_key = compare_key
+            X2, y2, data2, scaler2, look_back2 = self.ticker_data[compare_key].values()
 
             model_fn = {
                 "LSTM": build_lstm_model,
@@ -605,29 +741,32 @@ class StockTradingGUI(QMainWindow):
 
     def plot_forecast(self, pred_dict, last_date, compare_results=None, compare_ticker=None):
         self.forecast_figure.clear()
-        self.forecast_figure.set_constrained_layout(False)
-        self.forecast_figure.subplots_adjust(right=0.78)
         ax = self.forecast_figure.add_subplot(111)
 
+        # 1) Plot the full history you just fetched
+        real = self.ticker_data[self.current_data_key]["data"]
+        ax.plot(real.index, real["Close"], label=f"{self.ticker_combo.currentText()} Actual")
+
+        # 2) Plot your predictions (short/medium/long)
         base = [last_date + timedelta(days=i) for i in range(1, 366)]
-        ticker = self.ticker_combo.currentText()
-        real = self.ticker_data[ticker]["data"]
-        ax.plot(real.index, real["Close"], label=f"{ticker} Actual", color="blue")
+        # 30-day “Short” forecast
+        ax.plot(base[:30], pred_dict["Short"], label="Short")
 
-        ax.plot(base[:30], pred_dict["Short"], label="Short", color="green")
-        ax.plot(base[30:90], pred_dict["Medium"][-60:], label="Medium", color="orange")
-        ax.plot(base[90:], pred_dict["Long"][-275:], label="Long", color="red")
+        # 90-day “Medium” forecast: only days 31–90 → 60 points
+        ax.plot(base[30:90], pred_dict["Medium"][-60:], label="Medium")
 
-        if compare_results and compare_ticker in self.ticker_data:
-            compare_real = self.ticker_data[compare_ticker]["data"]
-            ax.plot(compare_real.index, compare_real["Close"], label=f"{compare_ticker} Actual", color="cyan")
-            ax.plot(base[:30], compare_results["Short"], "--", label=f"{compare_ticker} Short", color="gray")
-            ax.plot(base[30:90], compare_results["Medium"][-60:], "--", label=f"{compare_ticker} Medium", color="brown")
-            ax.plot(base[90:], compare_results["Long"][-275:], "--", label=f"{compare_ticker} Long", color="pink")
+        # 365-day “Long” forecast: only days 91–365 → 275 points
+        ax.plot(base[90:], pred_dict["Long"][-275:], label="Long")
 
-        title = f"{ticker} vs {compare_ticker} Forecast" if compare_results else f"{ticker} Forecast"
-        ax.set_title(title)
-        ax.legend(loc="center left", bbox_to_anchor=(1.01, 0.5))
+        # 3) Force the x-axis to start at your real data’s first date,
+        #    and extend out to the last forecast day.
+        start_date = real.index.min()
+        end_date = base[-1]
+        ax.set_xlim(start_date, end_date)
+
+        # 4) (Optional) make the dates look nicer
+        ax.figure.autofmt_xdate()
+
         self.forecast_canvas.draw()
 
     def plot_training_curves(self, history, label_prefix=""):
