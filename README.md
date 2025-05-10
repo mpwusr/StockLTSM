@@ -1,146 +1,108 @@
-# StockLTSMTransformerQuantum
+# README.md
 
-A PyQt5-based AI stock forecasting app that combines classical and quantum machine learning models to simulate, visualize, and evaluate trading strategies across multiple time horizons (Short / Medium / Long).
-
----
-
-## Overview
-
-**StockLTSMTransformerQuantum** is an end-to-end forecasting and trading simulation toolkit that enables side-by-side comparison of:
-
-- LSTM (Long Short-Term Memory)
-- Transformer
-- GRU + CNN Hybrid
-- QML (Quantum Machine Learning via PennyLane)
-
-It features a GUI for interactive use, real-time model training diagnostics, metrics visualizations, trading signal simulation, and optional debug logging.
+Project: StockLTSMTransformerQuantum
+Author: Michael P. Williams
+Repository: [https://github.com/mpwusr/StockLTSMTransformerQuantum](https://github.com/mpwusr/StockLTSMTransformerQuantum)
 
 ---
 
-## Features
+## OVERVIEW
 
-- GUI built with PyQt5
-- Multi-tab layout (Forecasts + Training Diagnostics)
-- Model comparison with MAE, MAPE, R², Sharpe Ratio
-- Toggleable debug logs
-- Support for both Yahoo Finance and Polygon.io as data providers
-- Training and forecast export (CSV)
-- Training history auto-saved per model
-- "Save Forecast" and "Open Folder" buttons
-- Color-coded plots and dropdown data source switching
-- Robust exception handling and logging
+StockLTSMTransformerQuantum is a PyQt5-based application for forecasting stock prices using classical (LSTM, Transformer, GRU+CNN) and quantum (QML via PennyLane) neural networks. It supports real-time diagnostics, visualization, and trading strategy simulation.
 
 ---
 
-## Models
+## REQUIREMENTS
 
-| Model        | Architecture             | Highlights                       |
-|--------------|--------------------------|-----------------------------------|
-| `LSTM`       | 2-layer LSTM             | Great for sequential time series |
-| `Transformer`| Multi-head Attention     | Captures long-term dependencies  |
-| `GRUCNN`     | Conv1D + GRU             | Combines pattern extraction + memory |
-| `QML`        | PennyLane quantum model  | Lightweight and interpretable    |
+Python 3.12 or later
 
----
+Install required packages using:
 
-## GUI Preview
-
-| Forecast Tab                          | Training Diagnostics Tab            |
-|--------------------------------------|-------------------------------------|
-| ![Forecast](assets/forecast_sample.png) | ![Diagnostics](assets/diagnostics_sample.png) |
-
----
-
-## Installation
-
-```bash
-git clone https://github.com/mpwusr/StockLTSMTransformerQuantum.git
-cd StockLTSMTransformerQuantum
-python -m venv .venv
-source .venv/bin/activate  # or .venv\Scripts\activate on Windows
+```
 pip install -r requirements.txt
 ```
 
+Note:
+
+* The `ta` package wraps TA-Lib indicators. If you experience build errors on macOS, install TA-Lib via Homebrew:
+
+  brew install ta-lib
+
 ---
 
-## Usage
+## ENVIRONMENT VARIABLES
 
-1. Set your `.env` file:
+Create a `.env` file in the project root with your API keys and desired tickers:
+
+Example `.env`:
+POLYGON\_API\_KEY=your\_polygon\_api\_key\_here
+ALPHAVANTAGE\_API\_KEY=your\_alpha\_api\_key\_here
+TICKERS=AAPL,TSLA,GOOGL
+
+---
+
+## HOW TO RUN
+
+1. Activate your virtual environment:
+
+   source .venv/bin/activate  (on macOS/Linux)
+   .venv\Scripts\activate     (on Windows)
+
+2. Set up your `.env` file with the correct keys and tickers.
+
+3. Launch the GUI:
+
+   python main.py
+
+4. In the GUI:
+
+   * Select a stock ticker and model (LSTM, Transformer, GRUCNN, QML)
+   * Choose a data source (Polygon, Yahoo, AlphaVantage)
+   * Click 'Run' to start training and forecasting
+
+---
+
+## OUTPUT
+
+* Forecast CSVs are saved to: `forecasts/{ticker}/`
+* Training metrics and logs are saved to: `training_logs/{ticker}/`
+* Debug trading logs (optional) saved to: `logs/trade_debug.txt`
+
+---
+
+## VERSION TRACKING
+
+To log your Python and package versions, run:
 
 ```
-POLYGON_API_KEY=your_key_here
+python versions.py
 ```
 
-2. Launch the GUI:
+## Sample `versions.py`:
 
-```bash
-python main.py
-```
+import pkg\_resources
+import platform
 
-3. Select ticker, model, and data source (Polygon/Yahoo).
-4. Train model, visualize predictions, and export results.
+print(f"Python Version: {platform.python\_version()}")
+print("Installed Package Versions:")
 
----
-
-## Directory Structure
-
-```
-├── data_provider.py         # Unified stock data API
-├── main.py                  # GUI entry point
-├── models.py                # Model definitions
-├── quantum.py               # QML prediction logic
-├── trading.py               # Strategy simulation + metrics
-├── utils.py                 # Ticker loading, helpers
-├── forecasts/               # Exported forecasts
-├── training_logs/           # Per-model training logs
-└── requirements.txt
-```
+for dist in sorted(pkg\_resources.working\_set, key=lambda d: d.project\_name.lower()):
+print(f"{dist.project\_name}=={dist.version}")
 
 ---
 
-## Sample Output
+## NOTES
 
-```text
-Training log saved to training_logs/AAPL/lstm_training_log_20250420_1012.csv
- Saved forecast CSVs:
-  - LSTM_Short_20250420_1015.csv
-  - LSTM_Medium_20250420_1015.csv
-  - LSTM_Long_20250420_1015.csv
-```
+* Only a subset of historical stock data is included in this ZIP to limit size.
+* All models are trained locally using CPU; no cloud services required.
+* GUI includes forecast plots, model metrics (MAE, MAPE, R², Sharpe), and optional debugging overlay.
 
 ---
 
-## Model Comparison Snapshot
+## LICENSE
 
-| Model      | Val MAE | Sharpe | MAPE (%) | R²     |
-|------------|---------|--------|----------|--------|
-| LSTM       | 3.12    | 1.45   | 6.78     | 0.81   |
-| Transformer| 2.87    | 1.32   | 6.05     | 0.85   |
-| GRUCNN     | 3.01    | 1.51   | 6.40     | 0.83   |
-| QML        | 3.25    | 1.12   | 7.15     | 0.79   |
+MIT License (see GitHub repository)
 
 ---
 
-## Built With
-
-- Python 3.12
-- PyQt5
-- TensorFlow / Keras
-- PennyLane (for QML)
-- yFinance + Polygon.io
-- scikit-learn
-- TA-Lib (via `ta` package)
-- matplotlib
-
----
-
-## License
-
-MIT License © [mpwusr](https://github.com/mpwusr)
-
----
-
-## Acknowledgments
-based to some extent on https://medium.com/@albertoglvz25/predicting-stock-prices-with-an-lstm-model-in-python-26c7377b8ecb
-
-Thanks to [PennyLane](https://pennylane.ai/), [Keras](https://keras.io/), and [Polygon.io](https://polygon.io/) for APIs and tooling.
+Contact: [michaelpwilliams@vt.edu](mailto:michaelpwilliams@vt.edu)
