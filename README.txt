@@ -15,6 +15,25 @@ StockLTSMTransformerQuantum is a PyQt5-based application for forecasting stock p
 
 Python 3.12 or later
 
+Unzip zip file to filesystem (Mac OSX example)
+
+```
+% unzip STOCKLTSMTransformerQuantum.zip
+Archive:  STOCKLTSMTransformerQuantum.zip
+   creating: /Users/michaelwilliams/STOCKLSTMTransformerQuantum
+  inflating: STOCKLSTMTransformerQuantum/models.py
+  inflating: STOCKLSTMTransformerQuantum/requirements.txt
+  inflating: STOCKLSTMTransformerQuantum/versions.txt
+ extracting: STOCKLSTMTransformerQuantum/__init__.py
+  inflating: STOCKLSTMTransformerQuantum/README.md
+  inflating: STOCKLSTMTransformerQuantum/.env
+  inflating: STOCKLSTMTransformerQuantum/README.txt
+  inflating: STOCKLSTMTransformerQuantum/versions.py
+  inflating: STOCKLSTMTransformerQuantum/main.py
+ % cd STOCKLSTMTransformerQuantum
+STOCKLSTMTransformerQuantum %
+```
+
 Create and activate a virtual environment:
 
 ```
@@ -141,7 +160,7 @@ sys.stdout = sys.__stdout__
 
 ## LICENSE
 
-MIT License (see GitHub repository)
+MIT License
 
 ---
 
