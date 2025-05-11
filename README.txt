@@ -19,7 +19,7 @@ Python 3.12 or later
 Create and activate a virtual environment:
 
 ```
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate  (on macOS/Linux)
 .venv\Scripts\activate     (on Windows)
 ```
@@ -60,7 +60,7 @@ TICKERS=AAPL,TSLA,GOOGL
 
 3. Launch the GUI:
 
-   python main.py
+   python3 main.py
 
 4. In the GUI:
 
@@ -83,19 +83,52 @@ TICKERS=AAPL,TSLA,GOOGL
 To log your Python and package versions, run:
 
 ```
-python versions.py
+python3 versions.py
 ```
 
 ## Sample `versions.py`:
 
-import pkg\_resources
+# versions.py
+
 import platform
+import pkg_resources
+import sys
 
-print(f"Python Version: {platform.python\_version()}")
-print("Installed Package Versions:")
+# Define the output file (if redirected)
+output_file = "versions.txt"
 
-for dist in sorted(pkg\_resources.working\_set, key=lambda d: d.project\_name.lower()):
-print(f"{dist.project\_name}=={dist.version}")
+# Custom class to write to both stdout and a file
+class Tee:
+    def __init__(self, stdout, file):
+        self.stdout = stdout
+        self.file = file
+
+    def write(self, text):
+        self.stdout.write(text)
+        self.file.write(text)
+
+    def flush(self):
+        self.stdout.flush()
+        self.file.flush()
+
+# Open the output file and set up dual output
+with open(output_file, 'w') as f:
+    # Redirect stdout to both terminal and file
+    sys.stdout = Tee(sys.__stdout__, f)
+
+    # Your original code
+    print("============================")
+    print(f"Python Version: {platform.python_version()}")
+    print("============================")
+    print("Redirect to text file or stdout")
+    print("Installed Package Versions:")
+
+    for dist in sorted(pkg_resources.working_set, key=lambda d: d.project_name.lower()):
+        print(f"{dist.project_name}=={dist.version}")
+
+# Restore original stdout
+sys.stdout = sys.__stdout__
+
 
 ---
 
