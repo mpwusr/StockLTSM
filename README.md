@@ -2,7 +2,6 @@
 
 Project: StockLTSMTransformerQuantum
 Author: Michael P. Williams
-Repository: [https://github.com/mpwusr/StockLTSMTransformerQuantum](https://github.com/mpwusr/StockLTSMTransformerQuantum)
 
 ---
 
@@ -16,7 +15,15 @@ StockLTSMTransformerQuantum is a PyQt5-based application for forecasting stock p
 
 Python 3.12 or later
 
-Install required packages using:
+Create and activate a virtual environment:
+
+```
+python -m venv .venv
+source .venv/bin/activate  (on macOS/Linux)
+.venv\Scripts\activate     (on Windows)
+```
+
+Then install the required packages:
 
 ```
 pip install -r requirements.txt
@@ -75,8 +82,7 @@ TICKERS=AAPL,TSLA,GOOGL
 To log your Python and package versions, run:
 
 ```
-python versions.py > "<nameofversionsfile>.txt"
-# currently versions.txt
+python versions.py
 ```
 
 ## Sample `versions.py`:
