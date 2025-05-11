@@ -83,10 +83,6 @@ def fetch_from_yahoo(ticker, start="2020-01-01", end="2025-04-05", retries=3, pa
 
 
 def fetch_from_polygon(ticker, start="2020-01-01", end="2025-04-05", retries=3, backoff=2):
-    """
-    Fetch **all** daily bars for `ticker` from Polygon between start and end via paging.
-    Returns a DataFrame indexed by date with Open/High/Low/Close/Volume.
-    """
     POLYGON_KEY = os.getenv("POLYGON_API_KEY")
     if not POLYGON_KEY:
         raise RuntimeError("POLYGON_API_KEY not found in environment")
@@ -163,16 +159,6 @@ def resolve_date_range(start=None, end=None, years_ago=None):
 
 
 def fetch_from_alphavantage(ticker: str, start: str = "2020-01-01", end: str = None) -> pd.DataFrame:
-    """
-    Fetch full daily OHLCV history for `ticker` from AlphaVantage,
-    then filter between start and end (inclusive).
-
-    - ticker: e.g. "IBM"
-    - start: "YYYY-MM-DD"
-    - end:   "YYYY-MM-DD" (defaults to today if None)
-
-    Returns a DataFrame indexed by Date with columns ["Open","High","Low","Close","Volume"].
-    """
     api_key = os.getenv("ALPHAVANTAGE_API_KEY")
     if not api_key:
         raise RuntimeError("ALPHAVANTAGE_API_KEY not set in environment")
@@ -522,7 +508,6 @@ class StockTradingGUI(QMainWindow):
         self.forecast_canvas = FigureCanvas(self.forecast_figure)
         self.forecast_layout.addWidget(self.forecast_canvas)
 
-        # Training layout block (update this fully)
         self.training_layout = QVBoxLayout(self.training_tab)
         self.training_layout.setContentsMargins(0, 0, 0, 0)
         self.training_layout.setSpacing(0)
@@ -531,7 +516,6 @@ class StockTradingGUI(QMainWindow):
         self.training_figure = plt.Figure(figsize=(12, 6), constrained_layout=True)
         self.training_canvas = FigureCanvas(self.training_figure)
 
-        # Ensure it fills available space
         self.training_canvas.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding
         )
@@ -585,11 +569,11 @@ class StockTradingGUI(QMainWindow):
 
         path = os.path.abspath(self.forecast_folder_path)
 
-        if sys.platform.startswith("darwin"):  # macOS
+        if sys.platform.startswith("darwin"):
             os.system(f"open '{path}'")
-        elif os.name == "nt":  # Windows
+        elif os.name == "nt":
             os.startfile(path)
-        elif os.name == "posix":  # Linux
+        elif os.name == "posix":
             os.system(f"xdg-open '{path}'")
 
     def run(self, mode):
@@ -619,7 +603,6 @@ class StockTradingGUI(QMainWindow):
             start = self.start_input.text().strip()
             end = self.end_input.text().strip()
 
-        # Primary cache key
         key = (ticker, source, start, end, years_ago)
         if key not in self.ticker_data:
             X, y, data, scaler, look_back = fetch_and_prepare_data(
@@ -629,10 +612,6 @@ class StockTradingGUI(QMainWindow):
         self.current_data_key = key
         X, y, data, scaler, look_back = self.ticker_data[key].values()
 
-        # Launch main training thread (unchanged)
-        # … (existing ModelTrainerThread setup) …
-
-        # Handle optional comparison
         if compare_enabled and compare_ticker != ticker:
             compare_key = (compare_ticker, source, start, end, years_ago)
             if compare_key not in self.ticker_data:
@@ -643,10 +622,9 @@ class StockTradingGUI(QMainWindow):
                                                  "look_back": look_back2}
             self.compare_data_key = compare_key
             X2, y2, data2, scaler2, look_back2 = self.ticker_data[compare_key].values()
-        # Save the key for later (e.g., when plotting or saving forecasts)
+
         self.current_data_key = key
 
-        # Launch main training thread
         if mode == "Quantum":
             trainer = ModelTrainerThread(ticker, X, y, data, scaler, look_back,
                                          lambda _: None,
@@ -700,10 +678,6 @@ class StockTradingGUI(QMainWindow):
         self.compare_thread = None
 
         if self.last_forecast is not None:
-            self.plot_forecast(self.last_forecast, self.last_date,
-                               compare_results=self.compare_forecast,
-                               compare_ticker=self.compare_ticker)
-
             self.plot_training_curves(self.compare_history, label_prefix=self.compare_ticker)
 
     def toggle_buttons(self, enable, running_label=""):
@@ -743,30 +717,32 @@ class StockTradingGUI(QMainWindow):
         self.forecast_figure.clear()
         ax = self.forecast_figure.add_subplot(111)
 
-        # 1) Plot the full history you just fetched
+        # Base forecast (primary ticker)
         real = self.ticker_data[self.current_data_key]["data"]
-        ax.plot(real.index, real["Close"], label=f"{self.ticker_combo.currentText()} Actual")
+        ax.plot(real.index, real["Close"], label=f"{self.last_ticker} Actual", color="black")
 
-        # 2) Plot your predictions (short/medium/long)
         base = [last_date + timedelta(days=i) for i in range(1, 366)]
-        # 30-day “Short” forecast
-        ax.plot(base[:30], pred_dict["Short"], label="Short")
+        ax.plot(base[:30], pred_dict["Short"], label=f"{self.last_ticker} Short", color="blue")
+        ax.plot(base[30:90], pred_dict["Medium"][-60:], label=f"{self.last_ticker} Medium", color="orange")
+        ax.plot(base[90:], pred_dict["Long"][-275:], label=f"{self.last_ticker} Long", color="green")
 
-        # 90-day “Medium” forecast: only days 31–90 → 60 points
-        ax.plot(base[30:90], pred_dict["Medium"][-60:], label="Medium")
+        if self.compare_forecast and self.compare_data_key:
+            compare_real = self.ticker_data[self.compare_data_key]["data"]
+            ax.plot(compare_real.index, compare_real["Close"], label=f"{self.compare_ticker} Actual", linestyle="--",
+                    color="gray")
 
-        # 365-day “Long” forecast: only days 91–365 → 275 points
-        ax.plot(base[90:], pred_dict["Long"][-275:], label="Long")
+            base2 = [self.compare_last_date + timedelta(days=i) for i in range(1, 366)]
+            ax.plot(base2[:30], self.compare_forecast["Short"], label=f"{self.compare_ticker} Short", linestyle="--",
+                    color="purple")
+            ax.plot(base2[30:90], self.compare_forecast["Medium"][-60:], label=f"{self.compare_ticker} Medium",
+                    linestyle="--", color="brown")
+            ax.plot(base2[90:], self.compare_forecast["Long"][-275:], label=f"{self.compare_ticker} Long",
+                    linestyle="--", color="red")
 
-        # 3) Force the x-axis to start at your real data’s first date,
-        #    and extend out to the last forecast day.
-        start_date = real.index.min()
-        end_date = base[-1]
-        ax.set_xlim(start_date, end_date)
-
-        # 4) (Optional) make the dates look nicer
+        ax.set_xlim(real.index.min(), base[-1])
+        ax.set_title("Forecast Comparison")
+        ax.legend(loc="best")
         ax.figure.autofmt_xdate()
-
         self.forecast_canvas.draw()
 
     def plot_training_curves(self, history, label_prefix=""):

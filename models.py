@@ -84,7 +84,6 @@ def trading_strategy(predictions, last_date, future_dates, rsi_series=None, rsi_
                     debug_log(f"BUY on {date_str} at {pred_price:.2f}")
                 shares = 0
 
-    # Final sell if still holding
     if shares > 0:
         final_price = predictions[-1]
         proceeds = shares * final_price
@@ -225,12 +224,10 @@ dev = qml.device("default.qubit", wires=n_qubits)
 
 @qml.qnode(dev)
 def quantum_circuit(inputs, weights):
-    # Encode inputs
     for i in range(n_qubits):
         qml.RY(inputs[i], wires=i)
         qml.RZ(inputs[i], wires=i)
 
-    # Variational layers
     for layer in range(4):
         for i in range(n_qubits):
             qml.RX(weights[layer * n_qubits + i], wires=i)
@@ -242,7 +239,7 @@ def quantum_circuit(inputs, weights):
 
 
 def normalize_input(x):
-    # Handle both 1D (single time step) and 2D (sequence) inputs
+
     if len(x.shape) == 1:
         raw = x[:n_qubits]
     else:

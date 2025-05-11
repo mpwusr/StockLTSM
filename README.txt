@@ -2,49 +2,52 @@
 
 Project: StockLTSMTransformerQuantum
 Author: Michael P. Williams
-
 ---
 
 ## OVERVIEW
 
 StockLTSMTransformerQuantum is a PyQt5-based application for forecasting stock prices using classical (LSTM, Transformer, GRU+CNN) and quantum (QML via PennyLane) neural networks. It supports real-time diagnostics, visualization, and trading strategy simulation.
 
+The GUI enables **dual-stock comparison** mode, allowing users to select two different tickers and compare:
+
+* Their forecast trajectories (Short, Medium, Long horizon)
+* Training performance metrics (Loss, MAE, MAPE, R², Sharpe Ratio)
+
 ---
 
 ## REQUIREMENTS
 
+Unzip the ZIP file to your filesystem (Mac example):
+
+```bash
+% unzip StockLTSMTransformerQuantum.zip
+Archive:  StockLTSMTransformerQuantum.zip
+   creating: /Users/yourname/StockLTSMTransformerQuantum/
+  inflating: StockLTSMTransformerQuantum/models.py
+  inflating: StockLTSMTransformerQuantum/requirements.txt
+  inflating: StockLTSMTransformerQuantum/versions.txt
+ extracting: StockLTSMTransformerQuantum/__init__.py
+  inflating: StockLTSMTransformerQuantum/README.md
+  inflating: StockLTSMTransformerQuantum/.env
+  inflating: StockLTSMTransformerQuantum/README.txt
+  inflating: StockLTSMTransformerQuantum/versions.py
+  inflating: StockLTSMTransformerQuantum/main.py
+% cd StockLTSMTransformerQuantum
+```
+
 Python 3.12 or later
-
-Unzip zip file to filesystem (Mac OSX example)
-
-```
-% unzip STOCKLTSMTransformerQuantum.zip
-Archive:  STOCKLTSMTransformerQuantum.zip
-   creating: /Users/michaelwilliams/STOCKLSTMTransformerQuantum
-  inflating: STOCKLSTMTransformerQuantum/models.py
-  inflating: STOCKLSTMTransformerQuantum/requirements.txt
-  inflating: STOCKLSTMTransformerQuantum/versions.txt
- extracting: STOCKLSTMTransformerQuantum/__init__.py
-  inflating: STOCKLSTMTransformerQuantum/README.md
-  inflating: STOCKLSTMTransformerQuantum/.env
-  inflating: STOCKLSTMTransformerQuantum/README.txt
-  inflating: STOCKLSTMTransformerQuantum/versions.py
-  inflating: STOCKLSTMTransformerQuantum/main.py
- % cd STOCKLSTMTransformerQuantum
-STOCKLSTMTransformerQuantum %
-```
 
 Create and activate a virtual environment:
 
-```
+```bash
 python3 -m venv .venv
-source .venv/bin/activate  (on macOS/Linux)
-.venv\Scripts\activate     (on Windows)
+source .venv/bin/activate  # on macOS/Linux
+.venv\Scripts\activate     # on Windows
 ```
 
 Then install the required packages:
 
-```
+```bash
 pip install -r requirements.txt
 ```
 
@@ -52,7 +55,9 @@ Note:
 
 * The `ta` package wraps TA-Lib indicators. If you experience build errors on macOS, install TA-Lib via Homebrew:
 
-  brew install ta-lib
+```bash
+brew install ta-lib
+```
 
 ---
 
@@ -61,9 +66,17 @@ Note:
 Create a `.env` file in the project root with your API keys and desired tickers:
 
 Example `.env`:
-POLYGON\_API\_KEY=your\_polygon\_api\_key\_here
-ALPHAVANTAGE\_API\_KEY=your\_alpha\_api\_key\_here
+
+```
+POLYGON_API_KEY=your_polygon_api_key_here
+ALPHAVANTAGE_API_KEY=your_alpha_api_key_here
 TICKERS=AAPL,TSLA,GOOGL
+```
+
+### Data Source Notes:
+
+* You can choose from **Polygon**, **Yahoo Finance**, or **AlphaVantage** as your data source.
+* If an API key is missing or the data source fails, the app will automatically **fall back to Yahoo Finance** to ensure continuity.
 
 ---
 
@@ -71,18 +84,23 @@ TICKERS=AAPL,TSLA,GOOGL
 
 1. Activate your virtual environment:
 
-   source .venv/bin/activate  (on macOS/Linux)
-   .venv\Scripts\activate     (on Windows)
+```bash
+source .venv/bin/activate  # on macOS/Linux
+.venv\Scripts\activate     # on Windows
+```
 
 2. Set up your `.env` file with the correct keys and tickers.
 
 3. Launch the GUI:
 
-   python3 main.py
+```bash
+python3 main.py
+```
 
 4. In the GUI:
 
    * Select a stock ticker and model (LSTM, Transformer, GRUCNN, QML)
+   * Optionally enable comparison and select a second ticker
    * Choose a data source (Polygon, Yahoo, AlphaVantage)
    * Click 'Run' to start training and forecasting
 
@@ -100,22 +118,23 @@ TICKERS=AAPL,TSLA,GOOGL
 
 To log your Python and package versions, run:
 
-```
+```bash
 python3 versions.py
 ```
 
-## Sample `versions.py`:
+### Sample `versions.py`:
 
+This version writes both to the terminal and to `versions.txt`:
+
+```python
 # versions.py
 
 import platform
 import pkg_resources
 import sys
 
-# Define the output file (if redirected)
 output_file = "versions.txt"
 
-# Custom class to write to both stdout and a file
 class Tee:
     def __init__(self, stdout, file):
         self.stdout = stdout
@@ -129,32 +148,30 @@ class Tee:
         self.stdout.flush()
         self.file.flush()
 
-# Open the output file and set up dual output
 with open(output_file, 'w') as f:
-    # Redirect stdout to both terminal and file
     sys.stdout = Tee(sys.__stdout__, f)
 
-    # Your original code
     print("============================")
     print(f"Python Version: {platform.python_version()}")
     print("============================")
-    print("Redirect to text file or stdout")
     print("Installed Package Versions:")
 
     for dist in sorted(pkg_resources.working_set, key=lambda d: d.project_name.lower()):
         print(f"{dist.project_name}=={dist.version}")
 
-# Restore original stdout
-sys.stdout = sys.__stdout__
-
-
----
+    sys.stdout = sys.__stdout__
+```
 
 ## NOTES
 
 * Only a subset of historical stock data is included in this ZIP to limit size.
 * All models are trained locally using CPU; no cloud services required.
-* GUI includes forecast plots, model metrics (MAE, MAPE, R², Sharpe), and optional debugging overlay.
+* GUI includes:
+
+  * Forecast plots across 3 time horizons
+  * Dual-stock comparison support
+  * Model performance metrics
+  * Toggleable debug trading logs
 
 ---
 
