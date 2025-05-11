@@ -1,4 +1,7 @@
+============================
 Python Version: 3.12.6
+============================
+Redirect to text file or stdout
 Installed Package Versions:
 absl-py==2.2.2
 aiohappyeyeballs==2.6.1
