@@ -75,7 +75,8 @@ TICKERS=AAPL,TSLA,GOOGL
 To log your Python and package versions, run:
 
 ```
-python versions.py
+python versions.py > "<nameofversionsfile>.txt"
+# currently versions.txt
 ```
 
 ## Sample `versions.py`:
