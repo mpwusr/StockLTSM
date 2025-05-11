@@ -2,7 +2,6 @@
 
 Project: StockLTSMTransformerQuantum
 Author: Michael P. Williams
-Repository: [https://github.com/mpwusr/StockLTSMTransformerQuantum](https://github.com/mpwusr/StockLTSMTransformerQuantum)
 
 ---
 
