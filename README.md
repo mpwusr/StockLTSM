@@ -78,7 +78,7 @@ TICKERS=AAPL,TSLA,GOOGL
 
 * You can choose from **Polygon**, **Yahoo Finance**, or **AlphaVantage** as your data source.
 * If an API key is missing or the data source fails, the app will automatically **fall back to Yahoo Finance** to ensure continuity.
-* proper syntax for fallback is in zip file ="""
+* proper syntax for fallback is in zip file =""
 ---
 
 ## HOW TO RUN
