@@ -100,8 +100,11 @@ python3 main.py
 4. In the GUI:
 
    * Select a stock ticker and model (LSTM, Transformer, GRUCNN, QML)
-   * Optionally enable comparison and select a second ticker
-   * Choose a data source (Polygon, Yahoo, AlphaVantage)
+   * Currently, there are bugs with Stock Comparison - Optionally enable comparison and select a second ticker
+   * Choose a data source— there are three sources - (Polygon, Yahoo, AlphaVantage)
+   * Please focus on Yahoo as the included .env file does not have API keys for
+   * Polygon or Alphavantage so Yahoo is only option without required API keys
+   * leave included .env file as is with blank ="" this will default to Yahoo
    * Click 'Run' to start training and forecasting
 
 ---
