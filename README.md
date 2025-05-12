@@ -69,8 +69,8 @@ Create a `.env` file in the project root with your API keys and desired tickers:
 Example `.env`:
 
 ```
-POLYGON_API_KEY=your_polygon_api_key_here
-ALPHAVANTAGE_API_KEY=your_alpha_api_key_here
+POLYGON_API_KEY=your_polygon_api_key_here or ="" for fallback
+ALPHAVANTAGE_API_KEY=your_alpha_api_key_here or ="" for fallback
 TICKERS=AAPL,TSLA,GOOGL
 ```
 
@@ -78,7 +78,7 @@ TICKERS=AAPL,TSLA,GOOGL
 
 * You can choose from **Polygon**, **Yahoo Finance**, or **AlphaVantage** as your data source.
 * If an API key is missing or the data source fails, the app will automatically **fall back to Yahoo Finance** to ensure continuity.
-
+* proper syntax for fallback is in zip file ="""
 ---
 
 ## HOW TO RUN
